@@ -11,25 +11,16 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet'
-import { signOutAction } from '@/lib/auth/actions'
-
-const fetcher = (url: string) => fetch(url).then((res) => res.json())
-
-interface User {
-    name?: string
-    email?: string
-    image?: string
-}
+import { authClient, useAuth } from '@/lib/auth/client'
 
 const UserMenu = memo(function UserMenu() {
-    const { data: user, error } = useSWR<User>('/api/user', fetcher, {
-        onError: (err) => {
-            console.error('SWR Error:', err)
-        },
-        errorRetryCount: 0,
-    })
+    const { user, isPending, isAuthenticated } = useAuth()
 
-    if (error) {
+    if (isPending) {
+        return <div className="h-9 w-24 animate-pulse rounded-full bg-muted" />
+    }
+
+    if (!isAuthenticated || !user) {
         return (
             <div className="flex items-center gap-3">
                 <Button asChild variant="ghost">
@@ -42,17 +33,9 @@ const UserMenu = memo(function UserMenu() {
         )
     }
 
-    if (!user) {
-        return (
-            <div className="flex items-center gap-3">
-                <Button asChild variant="ghost">
-                    <Link href="/sign-in">Sign In</Link>
-                </Button>
-                <Button asChild className="rounded-full">
-                    <Link href="/sign-up">Sign Up</Link>
-                </Button>
-            </div>
-        )
+    const handleSignOut = async () => {
+        await authClient.signOut()
+        window.location.reload()
     }
 
     return (
@@ -73,14 +56,10 @@ const UserMenu = memo(function UserMenu() {
                     </Avatar>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-48 p-2">
-                    <form action={signOutAction} className="w-full">
-                        <button type="submit" className="flex w-full">
-                            <DropdownMenuItem className="w-full flex-1 cursor-pointer">
-                                <LogOut className="mr-2 h-4 w-4" />
-                                <span>Sign out</span>
-                            </DropdownMenuItem>
-                        </button>
-                    </form>
+                    <DropdownMenuItem className="w-full flex cursor-pointer" onClick={handleSignOut}>
+                        <LogOut className="mr-2 h-4 w-4" />
+                        <span>Sign out</span>
+                    </DropdownMenuItem>
                 </DropdownMenuContent>
             </DropdownMenu>
         </div>
