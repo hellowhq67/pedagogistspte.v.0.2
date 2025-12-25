@@ -25,7 +25,7 @@ import { QuestionType, AIFeedbackData, SpeakingFeedbackData } from '@/lib/types'
 import { cn } from '@/lib/utils'
 
 // Internal UI Components
-import { ScoreDetailsModal } from './score-details-modal.tsx'
+import { ScoreDetailsModal } from './score-details-modal'
 
 interface UniversalPracticeWrapperProps {
     category: string
@@ -281,98 +281,92 @@ export function UniversalPracticeWrapper({
                                         onClick={handleNext}
                                         className="px-8 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all shadow-xl shadow-blue-600/20 flex items-center gap-2"
                                     >
-                                        Next <ChevronRight className="size-4" />
-                                    </button>
+                                        {/* Community/Discussion Area - Below Practice Card */}
+                                        <div className="mt-12 w-full space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-300">
+                                            <div className="flex items-center justify-between px-4">
+                                                <h3 className="text-lg font-bold flex items-center gap-2">
+                                                    <MessageSquare className="size-5 text-blue-500" />
+                                                    Community Discussion
+                                                </h3>
+                                                <span className="text-xs font-medium text-gray-400">24 Comments</span>
+                                            </div>
+
+                                            <div className="bg-white dark:bg-[#121214] border border-gray-200 dark:border-white/10 rounded-[28px] p-8 shadow-sm">
+                                                <div className="text-center py-12">
+                                                    <div className="size-16 rounded-full bg-gray-100 dark:bg-white/5 flex items-center justify-center mx-auto mb-4 border border-dashed border-gray-300 dark:border-white/10">
+                                                        <MessageSquare className="size-8 text-gray-400" />
+                                                    </div>
+                                                    <p className="text-gray-500 dark:text-gray-400 font-medium">Be the first to share your thoughts on this question!</p>
+                                                </div>
+                                            </div>
+                                        </div>
                                 </div>
-                            </div>
+                            </main>
                         </div>
 
-                        {/* Community/Discussion Area - Below Practice Card */}
-                        <div className="mt-12 w-full space-y-6 animate-in fade-in slide-in-from-bottom-8 duration-700 delay-300">
-                            <div className="flex items-center justify-between px-4">
-                                <h3 className="text-lg font-bold flex items-center gap-2">
-                                    <MessageSquare className="size-5 text-blue-500" />
-                                    Community Discussion
-                                </h3>
-                                <span className="text-xs font-medium text-gray-400">24 Comments</span>
-                            </div>
+                        <ScoreDetailsModal
+                            isOpen={showScoreModal}
+                            onClose={() => setShowScoreModal(false)}
+                            data={scoreData}
+                            question={currentQuestion}
+                        />
+                    </div>
+                    )
+}
 
-                            <div className="bg-white dark:bg-[#121214] border border-gray-200 dark:border-white/10 rounded-[28px] p-8 shadow-sm">
-                                <div className="text-center py-12">
-                                    <div className="size-16 rounded-full bg-gray-100 dark:bg-white/5 flex items-center justify-center mx-auto mb-4 border border-dashed border-gray-300 dark:border-white/10">
-                                        <MessageSquare className="size-8 text-gray-400" />
-                                    </div>
-                                    <p className="text-gray-500 dark:text-gray-400 font-medium">Be the first to share your thoughts on this question!</p>
-                                </div>
-                            </div>
+                    function SidebarItem({icon, label, active = false, href}: {icon: React.ReactNode, label: string, active?: boolean, href?: string }) {
+    const content = (
+                    <div className={cn(
+                        "flex items-center gap-3 px-4 py-2.5 rounded-xl cursor-pointer transition-all border",
+                        active
+                            ? "bg-blue-50 dark:bg-blue-600/10 border-blue-100 dark:border-blue-600/20 text-blue-600 dark:text-blue-400 font-bold"
+                            : "bg-transparent border-transparent text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5"
+                    )}>
+                        {icon}
+                        <span className="text-sm">{label}</span>
+                    </div>
+                    )
+
+                    if (href) return <Link href={href}>{content}</Link>
+                    return content
+}
+
+                    function UtilityButton({icon, label}: {icon: React.ReactNode, label: string }) {
+    return (
+                    <button className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-all">
+                        {icon}
+                        <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
+                    </button>
+                    )
+}
+
+                    function LoadingState() {
+    return (
+                    <div className="min-h-screen flex items-center justify-center bg-[#F0F2F5] dark:bg-[#0a0a0b]">
+                        <div className="flex flex-col items-center gap-4">
+                            <div className="size-12 rounded-full border-4 border-blue-500 border-t-transparent animate-spin" />
+                            <p className="text-sm font-bold text-blue-600 dark:text-blue-400 animate-pulse uppercase tracking-widest">Loading Practice Test...</p>
                         </div>
                     </div>
-                </main>
-            </div>
-
-            <ScoreDetailsModal
-                isOpen={showScoreModal}
-                onClose={() => setShowScoreModal(false)}
-                data={scoreData}
-                question={currentQuestion}
-            />
-        </div>
-    )
+                    )
 }
 
-function SidebarItem({ icon, label, active = false, href }: { icon: React.ReactNode, label: string, active?: boolean, href?: string }) {
-    const content = (
-        <div className={cn(
-            "flex items-center gap-3 px-4 py-2.5 rounded-xl cursor-pointer transition-all border",
-            active
-                ? "bg-blue-50 dark:bg-blue-600/10 border-blue-100 dark:border-blue-600/20 text-blue-600 dark:text-blue-400 font-bold"
-                : "bg-transparent border-transparent text-gray-500 hover:bg-gray-50 dark:hover:bg-white/5"
-        )}>
-            {icon}
-            <span className="text-sm">{label}</span>
-        </div>
-    )
-
-    if (href) return <Link href={href}>{content}</Link>
-    return content
-}
-
-function UtilityButton({ icon, label }: { icon: React.ReactNode, label: string }) {
+                    function EmptyState({category}: {category: string }) {
     return (
-        <button className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-gray-400 hover:text-gray-900 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-all">
-            {icon}
-            <span className="text-[10px] font-bold uppercase tracking-wider">{label}</span>
-        </button>
-    )
-}
-
-function LoadingState() {
-    return (
-        <div className="min-h-screen flex items-center justify-center bg-[#F0F2F5] dark:bg-[#0a0a0b]">
-            <div className="flex flex-col items-center gap-4">
-                <div className="size-12 rounded-full border-4 border-blue-500 border-t-transparent animate-spin" />
-                <p className="text-sm font-bold text-blue-600 dark:text-blue-400 animate-pulse uppercase tracking-widest">Loading Practice Test...</p>
-            </div>
-        </div>
-    )
-}
-
-function EmptyState({ category }: { category: string }) {
-    return (
-        <div className="min-h-screen flex flex-col items-center justify-center bg-[#F0F2F5] dark:bg-[#0a0a0b] p-6 text-center">
-            <div className="size-32 rounded-[40px] bg-red-500/10 flex items-center justify-center mb-8 border-4 border-white dark:border-white/5 shadow-2xl">
-                <AlertCircle className="size-16 text-red-500" />
-            </div>
-            <h1 className="text-4xl font-black mb-4 tracking-tighter">QUESTION BANK EMPTY</h1>
-            <p className="text-gray-500 dark:text-gray-400 mb-10 text-lg max-w-md mx-auto leading-relaxed">
-                Our experts are currently curating premium content for this section. Please try another category!
-            </p>
-            <Link
-                href={`/pte/practice/${category}`}
-                className="bg-blue-600 hover:bg-blue-700 text-white font-black py-5 px-12 rounded-3xl transition-all shadow-2xl shadow-blue-600/40 text-lg uppercase tracking-widest"
-            >
-                Explore Other Types
-            </Link>
-        </div>
-    )
+                    <div className="min-h-screen flex flex-col items-center justify-center bg-[#F0F2F5] dark:bg-[#0a0a0b] p-6 text-center">
+                        <div className="size-32 rounded-[40px] bg-red-500/10 flex items-center justify-center mb-8 border-4 border-white dark:border-white/5 shadow-2xl">
+                            <AlertCircle className="size-16 text-red-500" />
+                        </div>
+                        <h1 className="text-4xl font-black mb-4 tracking-tighter">QUESTION BANK EMPTY</h1>
+                        <p className="text-gray-500 dark:text-gray-400 mb-10 text-lg max-w-md mx-auto leading-relaxed">
+                            Our experts are currently curating premium content for this section. Please try another category!
+                        </p>
+                        <Link
+                            href={`/pte/practice/${category}`}
+                            className="bg-blue-600 hover:bg-blue-700 text-white font-black py-5 px-12 rounded-3xl transition-all shadow-2xl shadow-blue-600/40 text-lg uppercase tracking-widest"
+                        >
+                            Explore Other Types
+                        </Link>
+                    </div>
+                    )
 }
