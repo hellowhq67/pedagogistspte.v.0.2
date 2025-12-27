@@ -14,7 +14,6 @@ import {
     SelectValue,
 } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { motion } from 'framer-motion'
 
 interface Question {
     id: string
@@ -106,11 +105,10 @@ export function QuestionList({
             {/* Questions Grid */}
             <div className="grid gap-4">
                 {filteredQuestions.map((question, index) => (
-                    <motion.div
+                    <div
                         key={question.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.05 }}
+                        className="animate-in fade-in slide-in-from-bottom-2 duration-500 fill-mode-both"
+                        style={{ animationDelay: `${index * 50}ms` }}
                     >
                         <Card
                             className="border-border/50 bg-card/50 backdrop-blur hover:bg-card/80 transition-all cursor-pointer group"
@@ -131,10 +129,10 @@ export function QuestionList({
                                             <Badge
                                                 variant="outline"
                                                 className={`${question.difficulty === 'Easy'
-                                                        ? 'bg-green-500/10 text-green-400 border-green-500/20'
-                                                        : question.difficulty === 'Medium'
-                                                            ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
-                                                            : 'bg-red-500/10 text-red-400 border-red-500/20'
+                                                    ? 'bg-green-500/10 text-green-400 border-green-500/20'
+                                                    : question.difficulty === 'Medium'
+                                                        ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20'
+                                                        : 'bg-red-500/10 text-red-400 border-red-500/20'
                                                     }`}
                                             >
                                                 {question.difficulty}
@@ -163,7 +161,7 @@ export function QuestionList({
                                 </div>
                             </CardContent>
                         </Card>
-                    </motion.div>
+                    </div>
                 ))}
             </div>
 

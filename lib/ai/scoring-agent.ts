@@ -1,45 +1,17 @@
-import { generateText, tool, Output } from 'ai';
-import { geminiModel, fastModel } from './config';
-import { QuestionType, AIFeedbackData } from '@/lib/types';
-import { z } from 'zod';
-import { retrieveScoringCriteria, transcribeAudio } from './tools';
-import { env } from '@/lib/env';
-
-// Define the schema for the feedback data
-const AIFeedbackDataSchema = z.object({
-    overallScore: z.number().describe('Overall score from 0-90'),
-    pronunciation: z.object({ score: z.number(), feedback: z.string() }).optional(),
-    fluency: z.object({ score: z.number(), feedback: z.string() }).optional(),
-    grammar: z.object({ score: z.number(), feedback: z.string() }).optional(),
-    vocabulary: z.object({ score: z.number(), feedback: z.string() }).optional(),
-    content: z.object({ score: z.number(), feedback: z.string() }).optional(),
-    spelling: z.object({ score: z.number(), feedback: z.string() }).optional(),
-    structure: z.object({ score: z.number(), feedback: z.string() }).optional(),
-    accuracy: z.object({ score: z.number(), feedback: z.string() }).optional(),
-    suggestions: z.array(z.string()).describe('List of actionable suggestions for improvement'),
-    strengths: z.array(z.string()).describe('List of strengths identified in the response'),
-    areasForImprovement: z.array(z.string()).describe('List of specific areas to improve')
-});
-
-/**
- * Fetches audio from a URL and converts it to a base64 string.
- * This is a helper function, not a tool for the model.
- */
-async function fetchAudioBase64(url: string): Promise<string | null> {
-    try {
-        const response = await fetch(url);
-        if (!response.ok) return null;
-        const arrayBuffer = await response.arrayBuffer();
-        return Buffer.from(arrayBuffer).toString('base64');
-    } catch (error) {
-        console.error('Audio fetch error:', error);
-        return null;
-    }
-}
+import { generateObject } from "ai";
+import { proModel, fastModel } from "./config";
+import { QuestionType, AIFeedbackData, WordMarking } from "../types";
+import { z } from "zod";
+import { AIFeedbackDataSchema } from "./schemas";
+import {
+    retrieveScoringCriteria,
+    transcribeAudioTool,
+    fetchAudioAsBase64,
+} from "./tools";
 
 /**
  * Orchestration Agent for PTE Scoring
- * Uses Gemini 1.5 Pro with native audio capabilities, RAG for criteria, and AssemblyAI for transcription verification.
+ * Uses Parallel Review + Synthesis pattern with Gemini 1.5 Pro.
  */
 export async function scorePteAttemptV2(
     type: QuestionType,
@@ -52,68 +24,145 @@ export async function scorePteAttemptV2(
     }
 ): Promise<AIFeedbackData> {
     console.log(`[Scoring Agent] Starting scoring for ${type}`);
-    
-    // Prepare the user content
-    const userContent: any[] = [ 
-        { type: 'text', text: `Question Prompt: ${params.questionContent}` } 
-    ];
 
-    // Handle Audio
-    if (params.submission.audioUrl) {
-        console.log(`[Scoring Agent] Processing audio: ${params.submission.audioUrl}`);
-        
-        // 1. Fetch Base64 for Gemini Native Audio
-        const audioBase64 = await fetchAudioBase64(params.submission.audioUrl);
-        if (audioBase64) {
-            userContent.push({
-                type: 'file',
-                data: audioBase64,
-                mimeType: 'audio/mp3' // Assumption, or detect from fetch
-            });
-            userContent.push({ type: 'text', text: 'This is the user\'s audio response.' });
-        } else {
-            console.warn('[Scoring Agent] Failed to fetch audio base64. Proceeding with transcription only if available.');
-        }
+    // Step 1: Retrieve scoring criteria and transcribe if needed
+    const questionTypeKey = type.toLowerCase().replace(/\s+/g, "_");
 
-        // 2. Add transcription instruction (Agent will call the tool)
-        userContent.push({ 
-            type: 'text', 
-            text: `The user submitted an audio file at: ${params.submission.audioUrl}. \n` + 
-                  `Please transcribe it using the transcription tool to verify the content accuracy against the native audio understanding.` 
-        });
-    } else if (params.submission.text) {
-        userContent.push({ type: 'text', text: `User Text Response: ${params.submission.text}` });
+    const [criteriaResult, transcriptionResult, audioBase64Result] =
+        (await Promise.all([
+            retrieveScoringCriteria.execute({ questionType: questionTypeKey }),
+            params.submission.audioUrl
+                ? transcribeAudioTool.execute({ audioUrl: params.submission.audioUrl })
+                : Promise.resolve({ transcript: params.submission.text }),
+            params.submission.audioUrl
+                ? fetchAudioAsBase64.execute({ url: params.submission.audioUrl })
+                : Promise.resolve(null),
+        ])) as [{ criteria: string }, { transcript?: string; error?: string }, { base64?: string; mimeType?: string; error?: string } | null];
+
+    console.log(`[Scoring Agent] Preprocessing complete.`);
+
+    const criteria = criteriaResult.criteria;
+    const transcript =
+        transcriptionResult.transcript || params.submission.text || "";
+
+    if (!transcript && !params.submission.audioUrl) {
+        throw new Error("No submission content provided (text or audio)");
     }
 
-    // Agent Orchestration
-    const { output } = await generateText({
-        model: geminiModel, // Gemini 1.5 Pro
-        tools: {
-            retrieveScoringCriteria,
-            transcribeAudio
-        },
-        maxSteps: 5, // Allow multi-step reasoning (RAG -> Transcribe -> Score)
-        system: `You are an expert PTE Academic examiner. Your goal is to provide a detailed, accurate score and feedback for the user's response.
-        
-        Follow this process:
-        1. Retrieve the scoring criteria for the question type: "${type}".
-        2. If audio is provided:
-           - Listen to the audio (provided natively).
-           - Transcribe it using the 'transcribeAudio' tool to ensure you catch every word for content scoring.
-           - Compare your native listening understanding with the transcript.
-        3. Evaluate the response against the criteria (Content, Fluency, Pronunciation, etc.).
-        4. Generate a detailed JSON report.`,
-        messages: [
-            {
-                role: 'user',
-                content: userContent
-            }
-        ],
-        output: Output.object({
-            schema: AIFeedbackDataSchema
-        })
+    console.log(`[Scoring Agent] Transcript: ${transcript}`);
+
+    // Step 2: Parallel Expert Reviews
+    console.log("[Scoring Agent] Dispatching parallel expert reviews...");
+
+    const [accuracyReviewResult, phoneticReviewResult] = await Promise.allSettled([
+        // Expert 1: Accuracy & Content (Word-level marking)
+        generateObject({
+            model: fastModel,
+            schema: z.object({
+                contentScore: z.number().min(0).max(90),
+                wordMarking: z.array(
+                    z.object({
+                        word: z.string(),
+                        classification: z.enum([
+                            "good",
+                            "average",
+                            "poor",
+                            "pause",
+                            "omitted",
+                            "inserted",
+                            "filler",
+                        ]),
+                        feedback: z.string().optional(),
+                    })
+                ),
+                accuracyFeedback: z.string(),
+            }),
+            messages: [
+                {
+                    role: "system",
+                    content: `You are an expert PTE Content and Accuracy examiner. 
+            Your goal is to compare the target text (Question Prompt) with the User's Transcript.
+            Identify every word that was:
+            - good: pronounced correctly and present
+            - average: slightly mispronounced
+            - poor: badly mispronounced
+            - omitted: in target text but missing in transcript
+            - inserted: in transcript but not in target text
+            - filler: "uh", "um", etc.
+            - pause: significant silent gaps (indicated by punctuation or your inference)
+            
+            Return a list of WordMarking objects and a content score.`,
+                },
+                {
+                    role: "user",
+                    content: `Target Text: ${params.questionContent}\nUser Transcript: ${transcript}\nScoring Criteria: ${criteria}`,
+                },
+            ],
+        }),
+
+        // Expert 2: Pronunciation & Fluency
+        generateObject({
+            model: proModel,
+            schema: z.object({
+                pronunciationScore: z.number().min(0).max(90),
+                fluencyScore: z.number().min(0).max(90),
+                phoneticFeedback: z.string(),
+                strengths: z.array(z.string()),
+                weaknesses: z.array(z.string()),
+            }),
+            system: `You are an expert PTE Phonetic examiner focusing on Oral Fluency and Pronunciation.
+            Assess rhythm, stress, intonation, and clarity.
+            The criteria provided should guide your scores.`,
+            messages: [
+                {
+                    role: "user",
+                    content: [
+                        {
+                            type: "text",
+                            text: `Evaluate the following submission:\nTranscript: ${transcript}\nCriteria: ${criteria}`,
+                        },
+                        ...(audioBase64Result && audioBase64Result.base64
+                            ? [
+                                {
+                                    type: "file" as const,
+                                    data: Buffer.from(audioBase64Result.base64, 'base64'),
+                                    mimeType: audioBase64Result.mimeType || "audio/mpeg",
+                                },
+                            ]
+                            : []),
+                    ],
+                },
+            ],
+        }),
+    ]);
+
+    if (accuracyReviewResult.status === "rejected") {
+        console.error("[Scoring Agent] Accuracy Expert failed:", accuracyReviewResult.reason);
+        throw new Error(`Accuracy Expert Review failed: ${accuracyReviewResult.reason.message}`);
+    }
+    if (phoneticReviewResult.status === "rejected") {
+        console.error("[Scoring Agent] Phonetic Expert failed:", phoneticReviewResult.reason);
+        throw new Error(`Phonetic Expert Review failed: ${phoneticReviewResult.reason.message}`);
+    }
+
+    const accuracyReview = accuracyReviewResult.value;
+    const phoneticReview = phoneticReviewResult.value;
+
+    // Step 3: Technical Lead Synthesis
+    const { object: finalFeedback } = await generateObject({
+        model: proModel,
+        system: `You are the lead PTE Examiner. Synthesize the reports from the Accuracy Expert and the Phonetic Expert into a final, consistent AIFeedbackData report.
+        Ensure the overall score is a fair weighted average.
+        Ensure the wordMarking is preserved and accurate.
+        The output must strictly follow the AIFeedbackData schema.`,
+        schema: AIFeedbackDataSchema,
+        prompt: `
+        Accuracy Expert Report: ${JSON.stringify(accuracyReview.object)}
+        Phonetic Expert Report: ${JSON.stringify(phoneticReview.object)}
+        Question Type: ${type}
+        Question Content: ${params.questionContent}`,
     });
 
-    console.log('[Scoring Agent] Scoring complete.');
-    return output;
+    console.log("[Scoring Agent] Scoring complete.");
+    return finalFeedback;
 }

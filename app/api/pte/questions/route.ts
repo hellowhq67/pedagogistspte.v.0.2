@@ -30,6 +30,10 @@ export async function GET(request: NextRequest) {
             where: whereClause,
             with: {
                 questionType: true,
+                speakingDetails: true,
+                writingDetails: true,
+                readingDetails: true,
+                listeningDetails: true,
             },
             limit: 50,
         });

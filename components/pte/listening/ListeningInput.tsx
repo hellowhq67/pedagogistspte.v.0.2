@@ -13,6 +13,7 @@ type Props = {
   question: any
   value: any
   onChange: (value: any) => void
+  disabled:boolean
 }
 
 export default function ListeningInput({
@@ -65,22 +66,7 @@ export default function ListeningInput({
       return (
         <div className="space-y-3">
           <h3 className="font-medium">Select the best answer:</h3>
-          <RadioGroup
-            value={value?.selectedOption || ''}
-            onValueChange={(selectedOption) => onChange({ selectedOption })}
-          >
-            {options.map((option: string, index: number) => (
-              <div key={index} className="flex items-center space-x-2">
-                <RadioGroupItem value={option} id={`option-${index}`} />
-                <Label
-                  htmlFor={`option-${index}`}
-                  className="flex-1 cursor-pointer"
-                >
-                  {option}
-                </Label>
-              </div>
-            ))}
-          </RadioGroup>
+          
         </div>
       )
 
@@ -161,29 +147,7 @@ export default function ListeningInput({
           <h3 className="font-medium">
             Select the summary that best matches the recording:
           </h3>
-          <RadioGroup
-            value={value?.selectedOption || ''}
-            onValueChange={(selectedOption) => onChange({ selectedOption })}
-          >
-            {options.map((option: string, index: number) => (
-              <div
-                key={index}
-                className="flex items-start space-x-2 rounded-md border p-3"
-              >
-                <RadioGroupItem
-                  value={option}
-                  id={`summary-${index}`}
-                  className="mt-1"
-                />
-                <Label
-                  htmlFor={`summary-${index}`}
-                  className="flex-1 cursor-pointer"
-                >
-                  {option}
-                </Label>
-              </div>
-            ))}
-          </RadioGroup>
+        
         </div>
       )
 
@@ -193,22 +157,7 @@ export default function ListeningInput({
           <h3 className="font-medium">
             Select the word or group of words that best completes the sentence:
           </h3>
-          <RadioGroup
-            value={value?.selectedOption || ''}
-            onValueChange={(selectedOption) => onChange({ selectedOption })}
-          >
-            {options.map((option: string, index: number) => (
-              <div key={index} className="flex items-center space-x-2">
-                <RadioGroupItem value={option} id={`word-${index}`} />
-                <Label
-                  htmlFor={`word-${index}`}
-                  className="flex-1 cursor-pointer"
-                >
-                  {option}
-                </Label>
-              </div>
-            ))}
-          </RadioGroup>
+       
         </div>
       )
 

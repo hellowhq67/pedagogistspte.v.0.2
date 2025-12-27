@@ -2,14 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { Mic, Square, Play, AlertCircle, ArrowLeft, Loader2, RotateCcw, CheckCircle } from 'lucide-react'
-import { useAudioRecorder } from '../hooks/use-audio-recorder'
-import { submitAttempt } from '@/lib/actions/pte'
-import { ScoreDetailsModal } from './score-details-modal'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Mic, Square, Volume2, AlertCircle, RotateCcw, CheckCircle, Loader2, Play, Sparkles, Clock, Eye, ArrowLeft, Image as ImageIcon } from 'lucide-react'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
-import { motion } from 'framer-motion'
+import { scoreSpeakingAttempt } from '@/app/actions/pte'
+import { QuestionType } from '@/lib/types'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { LiveWaveform } from '@/components/ui/live-waveform'
@@ -23,6 +21,10 @@ import {
     AudioPlayerSpeed,
 } from '@/components/ui/audio-player'
 import { toast } from 'sonner'
+import { useAudioRecorder } from '@/components/pte/hooks/use-audio-recorder'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
+import SpeakingResults from '@/app/practice/_componets/SpeakingResults'
 
 interface DescribeImageProps {
     question: {
@@ -34,26 +36,33 @@ interface DescribeImageProps {
     }
 }
 
-/**
- * Render the Describe Image practice UI allowing a user to prepare, record, preview, and submit an audio description of an image.
- *
- * The component manages a multi-stage flow (idle, preparing, recording, processing, complete), microphone device selection,
- * live waveform visualization during recording, client-side transcription (mocked), and submission for AI scoring with toast feedback.
- *
- * @param question - The question object for the task. Expected properties: `id`, `title`, `promptText`, `promptMediaUrl`, and `difficulty`.
- * @returns A React element containing the full practice interface for the Describe Image task.
- */
 export function DescribeImage({ question }: DescribeImageProps) {
     const router = useRouter()
     const [stage, setStage] = useState<'idle' | 'preparing' | 'recording' | 'processing' | 'complete'>('idle')
     const [prepTime, setPrepTime] = useState(25)
     const [transcript, setTranscript] = useState('')
     const [score, setScore] = useState<any>(null)
-    const [isScoreModalOpen, setIsScoreModalOpen] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [audioUrl, setAudioUrl] = useState<string | null>(null)
     const [selectedDeviceId, setSelectedDeviceId] = useState<string>('')
     const [isSubmitting, setIsSubmitting] = useState(false)
+
+    const handleRecordingComplete = useCallback(async (blob: Blob, duration: number) => {
+        setStage('processing')
+        try {
+            const url = URL.createObjectURL(blob)
+            setAudioUrl(url)
+
+            // Mock transcription for now
+            setTimeout(() => {
+                setTranscript('The image shows a detailed chart of population growth trends.')
+                setStage('complete')
+            }, 1500)
+        } catch (err: any) {
+            setError(err.message || 'Failed to process recording')
+            setStage('idle')
+        }
+    }, [])
 
     const {
         isRecording,
@@ -70,26 +79,28 @@ export function DescribeImage({ question }: DescribeImageProps) {
         onRecordingComplete: handleRecordingComplete,
     })
 
+
     const handleStartRecording = useCallback(async () => {
         playBeep()
         setStage('recording')
         await startRecording(selectedDeviceId)
     }, [startRecording, playBeep, selectedDeviceId])
 
-    // Prep timer
     useEffect(() => {
+        let timer: NodeJS.Timeout
         if (stage === 'preparing' && prepTime > 0) {
-            const timer = setTimeout(() => setPrepTime((t) => t - 1), 1000)
-            return () => clearTimeout(timer)
+            timer = setTimeout(() => setPrepTime(prepTime - 1), 1000)
         } else if (stage === 'preparing' && prepTime === 0) {
             handleStartRecording()
         }
+        return () => clearTimeout(timer)
     }, [stage, prepTime, handleStartRecording])
 
     const handleBegin = () => {
         setStage('preparing')
         setPrepTime(25)
         setError(null)
+        setScore(null)
         resetRecording()
     }
 
@@ -98,364 +109,247 @@ export function DescribeImage({ question }: DescribeImageProps) {
         stopRecording()
     }, [stopRecording, playBeep])
 
-    /**
-     * Process a completed recording by preparing it for playback, generating a transcript, and updating UI stage.
-     *
-     * @param blob - The recorded audio data as a Blob
-     * @param duration - Recording duration in milliseconds
-     */
-    async function handleRecordingComplete(blob: Blob, duration: number) {
-        setStage('processing')
-
-        try {
-            const audioFile = new File([blob], 'recording.webm', { type: 'audio/webm' })
-            const url = URL.createObjectURL(blob)
-            setAudioUrl(url)
-
-            // Transcribe audio
-            const transcribedText = await transcribeAudio(blob)
-            setTranscript(transcribedText)
-
-            setStage('complete')
-        } catch (err: any) {
-            setError(err.message || 'Failed to process recording')
-            setStage('idle')
-        }
-    }
-
     const handleSubmit = async () => {
-        if (!audioUrl || !transcript) return
-
+        if (!audioBlob || !question.id) return
         setIsSubmitting(true)
         try {
-            // Submit to server for AI scoring
-            const result = await submitAttempt({
-                questionId: question.id,
-                questionType: 'describe_image',
-                audioUrl: audioUrl,
-                transcript: transcript,
-                durationMs: recordingTime,
-            })
+            const file = new File([audioBlob], 'recording.webm', { type: 'audio/webm' })
 
-            setScore(result.score)
-            setIsScoreModalOpen(true)
+            const result = await scoreSpeakingAttempt(
+                QuestionType.DESCRIBE_IMAGE,
+                file,
+                question.promptText || question.title,
+                question.id
+            )
 
-            toast.success('Your response has been submitted and scored!')
-
-            // Redirect after a delay or user action? 
-            // For now, we keep the modal open, but we could redirect to an attempts page
-            // router.push(`/pte/academic/practice/speaking/describe-image/attempts/${result.id}`)
+            if (result.success && result.feedback) {
+                setScore(result.feedback)
+                toast.success('Response scored successfully!')
+            } else {
+                setError(result.error || 'Failed to score response')
+                toast.error(result.error || 'Submission failed.')
+            }
         } catch (err: any) {
             setError(err.message || 'Failed to submit attempt')
-            toast.error('Failed to submit attempt. Please try again.')
+            toast.error('Submission failed.')
         } finally {
             setIsSubmitting(false)
         }
     }
 
-    // Mock transcription
-    async function transcribeAudio(blob: Blob): Promise<string> {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve('This is a sample description of the image showing key trends and data points.')
-            }, 1000)
-        })
-    }
-
-    const formatTime = (ms: number) => {
-        const seconds = Math.floor(ms / 1000)
-        return `${seconds}s`
+    if (score) {
+        return (
+            <div className="space-y-8">
+                <SpeakingResults scoreData={score} />
+                <div className="flex justify-center">
+                    <Button
+                        size="lg"
+                        variant="outline"
+                        onClick={handleBegin}
+                        className="rounded-2xl font-black uppercase tracking-widest px-12 h-14"
+                    >
+                        Try Again
+                    </Button>
+                </div>
+            </div>
+        )
     }
 
     return (
-        <div className="min-h-screen bg-background">
-            {/* Header */}
-            <div className="border-b border-border/40 bg-card/30 backdrop-blur-sm sticky top-0 z-10">
-                <div className="container mx-auto px-6 py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => router.back()}
-                                className="gap-2"
-                            >
-                                <ArrowLeft className="h-4 w-4" />
-                                Back
-                            </Button>
-                            <div className="h-6 w-px bg-border/40" />
-                            <div>
-                                <h1 className="text-lg font-semibold">{question.title}</h1>
-                                <p className="text-xs text-muted-foreground">Describe Image</p>
-                            </div>
-                        </div>
-                        <div className={`px-3 py-1 rounded-full text-xs font-medium ${question.difficulty === 'Easy' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                            question.difficulty === 'Medium' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                                'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                            }`}>
-                            {question.difficulty}
-                        </div>
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            {/* Header / Info Bar */}
+            <div className="flex items-center justify-between p-6 bg-card/30 backdrop-blur-sm border border-border/40 rounded-[32px]">
+                <div className="flex items-center gap-6">
+                    <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Prep</span>
+                        <span className="text-sm font-black flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-primary" />
+                            25s
+                        </span>
+                    </div>
+                    <div className="w-px h-8 bg-border/50" />
+                    <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Target</span>
+                        <span className="text-sm font-black flex items-center gap-1.5">
+                            <Mic className="w-3.5 h-3.5 text-primary" />
+                            40s Limit
+                        </span>
                     </div>
                 </div>
+
+                <Badge variant="outline" className="rounded-full px-4 py-1 font-black text-[10px] uppercase tracking-widest bg-primary/5 text-primary border-primary/20">
+                    {question.difficulty || 'Medium'}
+                </Badge>
             </div>
 
-            <div className="container mx-auto px-6 py-8 max-w-5xl">
-                <div className="grid lg:grid-cols-2 gap-8">
-                    {/* Left: Image Display */}
-                    <div className="space-y-4">
-                        <div className="relative aspect-video bg-muted/20 rounded-xl border border-border/40 overflow-hidden">
-                            {question.promptMediaUrl ? (
+            {/* Task Content */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+                <div className="space-y-6">
+                    <div className="flex items-center gap-2 text-primary font-black uppercase tracking-[0.2em] text-[10px] mb-2">
+                        <Sparkles className="size-4" />
+                        <span>Describe this image</span>
+                    </div>
+
+                    <div className="relative group overflow-hidden rounded-[48px] border border-border/40 bg-white dark:bg-[#121214] shadow-2xl shadow-black/5 aspect-[4/3] flex items-center justify-center">
+                        {question.promptMediaUrl ? (
+                            <>
                                 <Image
                                     src={question.promptMediaUrl}
-                                    alt={question.title}
+                                    alt="Describe this"
                                     fill
-                                    className="object-contain"
-                                    priority
+                                    className="object-contain p-8"
                                 />
-                            ) : (
-                                <div className="flex items-center justify-center h-full text-muted-foreground">
-                                    No image available
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-[2px]">
+                                    <Button variant="secondary" className="rounded-2xl font-black uppercase tracking-widest" onClick={() => window.open(question.promptMediaUrl!, '_blank')}>
+                                        <Eye className="mr-2 size-4" />
+                                        Full Size
+                                    </Button>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="text-center space-y-4 text-muted-foreground">
+                                <ImageIcon className="size-20 mx-auto opacity-20" />
+                                <p className="font-bold uppercase tracking-widest text-xs">No Image Available</p>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Interaction Card */}
+                <Card className="border-border/40 rounded-[48px] bg-card/30 backdrop-blur-sm overflow-hidden border-none shadow-none lg:mt-11">
+                    <CardContent className="p-8 md:p-12">
+                        <div className="relative">
+                            {stage === 'idle' && (
+                                <div
+                                    key="idle"
+                                    className="text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500"
+                                >
+                                    <div className="space-y-2">
+                                        <h3 className="text-2xl font-black tracking-tight">Ready to Begin?</h3>
+                                        <p className="text-sm font-medium text-muted-foreground">You will have 25 seconds to study the image before recording starts.</p>
+                                    </div>
+                                    <div className="max-w-xs mx-auto">
+                                        <MicSelector value={selectedDeviceId} onValueChange={setSelectedDeviceId} />
+                                    </div>
+                                    <Button onClick={handleBegin} size="lg" className="rounded-2xl font-black h-16 px-12 text-lg shadow-xl shadow-primary/20">
+                                        Start Practice
+                                    </Button>
+                                </div>
+                            )}
+
+                            {stage === 'preparing' && (
+                                <div
+                                    key="preparing"
+                                    className="text-center space-y-8 animate-in fade-in duration-500"
+                                >
+                                    <div className="relative size-40 mx-auto flex items-center justify-center">
+                                        <span className="text-7xl font-black text-primary tabular-nums">{prepTime}</span>
+                                        <svg className="absolute inset-0 size-full -rotate-90">
+                                            <circle
+                                                cx="50%"
+                                                cy="50%"
+                                                r="48%"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="4"
+                                                strokeDasharray={`${(prepTime / 25) * 100} 100`}
+                                                pathLength="100"
+                                                className="text-primary transition-all duration-1000"
+                                            />
+                                        </svg>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Preparation Time</p>
+                                        <p className="font-bold text-foreground/80">Study the image carefully</p>
+                                    </div>
+                                    <Button variant="ghost" onClick={handleStartRecording} className="font-black uppercase tracking-widest text-xs">
+                                        Skip to Recording
+                                    </Button>
+                                </div>
+                            )}
+
+                            {stage === 'recording' && (
+                                <div
+                                    key="recording"
+                                    className="space-y-10 animate-in fade-in duration-500"
+                                >
+                                    <div className="h-32 flex items-center justify-center">
+                                        <LiveWaveform
+                                            isActive={true}
+                                            audioLevel={audioLevel}
+                                            className="w-full h-full text-primary"
+                                        />
+                                    </div>
+                                    <div className="text-center space-y-2">
+                                        <div className="flex items-center justify-center gap-2 text-rose-500">
+                                            <div className="size-2 rounded-full bg-rose-500 animate-pulse" />
+                                            <span className="text-sm font-black uppercase tracking-widest">Recording</span>
+                                        </div>
+                                        <span className="text-5xl font-black tabular-nums">{Math.floor(recordingTime / 1000)}s</span>
+                                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">/ 40s Limit</p>
+                                    </div>
+                                    <div className="flex justify-center">
+                                        <Button
+                                            variant="destructive"
+                                            size="lg"
+                                            onClick={handleStopRecording}
+                                            className="rounded-full size-24 shadow-2xl shadow-rose-500/30 transition-transform hover:scale-110 active:scale-95"
+                                        >
+                                            <Square className="size-10 fill-current" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {(stage === 'processing' || stage === 'complete') && (
+                                <div
+                                    key="processing"
+                                    className="space-y-8 animate-in fade-in duration-500"
+                                >
+                                    {stage === 'processing' ? (
+                                        <div className="text-center py-12 space-y-4">
+                                            <Loader2 className="size-12 text-primary animate-spin mx-auto" />
+                                            <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">Analyzing your response</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-8">
+                                            <div className="p-6 bg-muted/50 rounded-[32px] border border-border/40">
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3">Recorded Transcript</p>
+                                                <p className="font-bold leading-relaxed italic text-foreground/80">&ldquo;{transcript}&rdquo;</p>
+                                            </div>
+
+                                            <div className="p-4 bg-background rounded-3xl border border-border/40">
+                                                <audio src={audioUrl!} controls className="w-full" />
+                                            </div>
+
+                                            <div className="flex gap-4">
+                                                <Button variant="outline" onClick={handleBegin} className="flex-1 rounded-2xl font-black h-14">
+                                                    <RotateCcw className="mr-2 size-4" />
+                                                    Retry
+                                                </Button>
+                                                <Button
+                                                    onClick={handleSubmit}
+                                                    disabled={isSubmitting}
+                                                    className="flex-1 rounded-2xl font-black h-14 shadow-xl shadow-primary/20"
+                                                >
+                                                    {isSubmitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <CheckCircle className="mr-2 size-4" />}
+                                                    Submit
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
-                        {question.promptText && (
-                            <Alert className="border-border/40 bg-muted/20">
-                                <AlertCircle className="h-4 w-4" />
-                                <AlertDescription className="text-sm">
-                                    {question.promptText}
-                                </AlertDescription>
-                            </Alert>
-                        )}
-                    </div>
-
-                    {/* Right: Practice Interface */}
-                    <div className="space-y-6">
-                        {/* Instructions */}
-                        <Card className="border-border/40 bg-card/50">
-                            <CardContent className="pt-6">
-                                <div className="space-y-3">
-                                    <div className="flex items-start gap-3">
-                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                            <span className="text-xs font-semibold text-primary">1</span>
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-medium">Study the image</p>
-                                            <p className="text-xs text-muted-foreground">You have 25 seconds to prepare</p>
-                                        </div>
-                                    </div>
-                                    <div className="flex items-start gap-3">
-                                        <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                            <span className="text-xs font-semibold text-primary">2</span>
-                                        </div>
-                                        <div>
-                                            <p className="text-sm font-medium">Describe in detail</p>
-                                            <p className="text-xs text-muted-foreground">Record your response (max 40 seconds)</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-
-                        {/* Practice Area */}
-                        <Card className="border-border/40 bg-card/50">
-                            <CardContent className="pt-6">
-
-                                {stage === 'idle' && (
-                                    <motion.div
-                                        key="idle"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className="text-center py-8 space-y-4"
-                                    >
-                                        <div className="w-full max-w-xs mx-auto mb-6">
-                                            <MicSelector
-                                                value={selectedDeviceId}
-                                                onValueChange={setSelectedDeviceId}
-                                            />
-                                        </div>
-
-                                        <div className="w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
-                                            <Mic className="h-8 w-8 text-primary" />
-                                        </div>
-                                        <div>
-                                            <h3 className="font-semibold mb-1">Ready to practice?</h3>
-                                            <p className="text-sm text-muted-foreground">Click begin when you&apos;re ready to start</p>
-                                        </div>
-                                        <Button
-                                            onClick={handleBegin}
-                                            size="lg"
-                                            className="mt-4 rounded-full px-8 h-12"
-                                        >
-                                            <Play className="mr-2 h-5 w-5" />
-                                            Begin Practice
-                                        </Button>
-                                    </motion.div>
-                                )}
-
-                                {stage === 'preparing' && (
-                                    <motion.div
-                                        key="preparing"
-                                        initial={{ opacity: 0, scale: 0.95 }}
-                                        animate={{ opacity: 1, scale: 1 }}
-
-                                        className="text-center py-8 space-y-6"
-                                    >
-                                        <div className="relative w-32 h-32 mx-auto">
-                                            <svg className="w-full h-full -rotate-90">
-                                                <circle
-                                                    cx="64"
-                                                    cy="64"
-                                                    r="56"
-                                                    stroke="currentColor"
-                                                    strokeWidth="8"
-                                                    fill="none"
-                                                    className="text-muted/20"
-                                                />
-                                                <circle
-                                                    cx="64"
-                                                    cy="64"
-                                                    r="56"
-                                                    stroke="currentColor"
-                                                    strokeWidth="8"
-                                                    fill="none"
-                                                    strokeDasharray={`${2 * Math.PI * 56}`}
-                                                    strokeDashoffset={`${2 * Math.PI * 56 * (1 - prepTime / 25)}`}
-                                                    className="text-primary transition-all duration-1000"
-                                                    strokeLinecap="round"
-                                                />
-                                            </svg>
-                                            <div className="absolute inset-0 flex items-center justify-center">
-                                                <span className="text-4xl font-bold">{prepTime}</span>
-                                            </div>
-                                        </div>
-                                        <div>
-                                            <h3 className="font-semibold mb-1">Preparation Time</h3>
-                                            <p className="text-sm text-muted-foreground">Study the image carefully</p>
-                                        </div>
-                                    </motion.div>
-                                )}
-
-                                {stage === 'recording' && (
-                                    <motion.div
-                                        key="recording"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        className="py-8 space-y-6"
-                                    >
-                                        <div className="w-full max-w-xs mx-auto h-32 flex items-center justify-center">
-                                            <LiveWaveform
-                                                isActive={true}
-                                                audioLevel={audioLevel}
-                                                deviceId={selectedDeviceId}
-                                                className="text-primary w-full h-full"
-                                            />
-                                        </div>
-
-                                        <div className="text-center">
-                                            <div className="text-4xl font-mono font-bold mb-2">
-                                                {formatTime(recordingTime)}
-                                            </div>
-                                            <div className="text-sm text-muted-foreground">
-                                                / 40s
-                                            </div>
-                                        </div>
-                                        <div className="flex justify-center">
-                                            <Button
-                                                onClick={handleStopRecording}
-                                                variant="destructive"
-                                                size="lg"
-                                                className="rounded-full px-8 h-12 shadow-lg hover:shadow-xl transition-all hover:scale-105"
-                                            >
-                                                <Square className="mr-2 h-5 w-5 fill-current" />
-                                                Stop Recording
-                                            </Button>
-                                        </div>
-                                    </motion.div>
-                                )}
-
-                                {stage === 'processing' && (
-                                    <motion.div
-                                        key="processing"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-
-                                        className="text-center py-12 space-y-4"
-                                    >
-                                        <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-                                        <div>
-                                            <h3 className="font-semibold mb-1">Analyzing your response</h3>
-                                            <p className="text-sm text-muted-foreground">This will take a few seconds...</p>
-                                        </div>
-                                    </motion.div>
-                                )}
-
-                                {stage === 'complete' && (
-                                    <div className="flex flex-col items-center gap-6 w-full max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                        <Card className="w-full border-border/50 bg-muted/30">
-                                            <CardContent className="p-4">
-                                                <AudioPlayerProvider>
-                                                    <div className="flex items-center gap-4">
-                                                        <AudioPlayerButton item={{ id: 'recording', src: audioUrl || '' }} />
-                                                        <AudioPlayerTime />
-                                                        <AudioPlayerProgress className="flex-1" />
-                                                        <AudioPlayerDuration />
-                                                        <AudioPlayerSpeed />
-                                                    </div>
-                                                </AudioPlayerProvider>
-                                            </CardContent>
-                                        </Card>
-
-                                        <div className="flex gap-3 w-full">
-                                            <Button variant="outline" onClick={() => {
-                                                setStage('idle')
-                                                resetRecording()
-                                                setScore(null)
-                                                setTranscript('')
-                                                setAudioUrl(null)
-                                            }} className="flex-1 rounded-full h-12">
-                                                <RotateCcw className="mr-2 h-4 w-4" />
-                                                Retry
-                                            </Button>
-                                            <Button onClick={handleSubmit} disabled={isSubmitting} className="flex-1 rounded-full h-12">
-                                                {isSubmitting ? (
-                                                    <>
-                                                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                        Submitting...
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        <CheckCircle className="mr-2 h-4 w-4" />
-                                                        Submit Answer
-                                                    </>
-                                                )}
-                                            </Button>
-                                        </div>
-                                    </div>
-                                )}
-
-
-                                {/* Error display */}
-                                {(error || recorderError) && (
-                                    <Alert variant="destructive" className="mt-4">
-                                        <AlertCircle className="h-4 w-4" />
-                                        <AlertDescription>{error || recorderError}</AlertDescription>
-                                    </Alert>
-                                )}
-                            </CardContent>
-                        </Card>
-                    </div>
-                </div>
+                    </CardContent>
+                </Card>
             </div>
 
-            {/* Score Details Modal */}
-            {score && (
-                <ScoreDetailsModal
-                    open={isScoreModalOpen}
-                    onOpenChange={setIsScoreModalOpen}
-                    score={score}
-                    transcript={transcript}
-                    originalText={question.promptText || 'Describe the image'}
-                />
+            {recorderError && (
+                <Alert variant="destructive" className="rounded-[32px] bg-rose-500/5 border-rose-500/20">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="font-bold">{recorderError}</AlertDescription>
+                </Alert>
             )}
         </div>
     )

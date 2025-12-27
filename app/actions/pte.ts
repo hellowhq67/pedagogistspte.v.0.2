@@ -1,102 +1,239 @@
 'use server'
 
-import { scorePteAttempt } from '@/lib/ai/scoring'
-import { AIFeedbackData, QuestionType, SpeakingFeedbackData } from '@/lib/types'
-import { upload } from '@vercel/blob'
-import { countWords } from '@/lib/utils'
+import { scorePteAttemptV2 } from '@/lib/ai/scoring-agent';
+import { AIFeedbackData, QuestionType, SpeakingFeedbackData } from '@/lib/types';
+import { upload } from '@vercel/blob';
+import { countWords } from '@/lib/utils';
+import { savePteAttempt, trackAIUsage } from '@/lib/db/queries/pte-scoring';
+import { auth } from '@/lib/auth/auth';
+import { headers } from 'next/headers';
+import { db } from '@/lib/db/drizzle';
+import { eq, sql } from 'drizzle-orm';
+import { users } from '@/lib/db/schema';
+
+/**
+ * Check and decrement user credits
+ */
+async function checkAndUseCredits(userId: string) {
+  const user = await db.query.users.findFirst({
+    where: eq(users.id, userId),
+  });
+
+  if (!user) {
+    throw new Error('User not found');
+  }
+
+  // Check if user has AI credits
+  const isFreeMode = process.env.NEXT_PUBLIC_FREE_MODE === 'true';
+  if (isFreeMode) {
+    console.log('[Free Mode] Bypassing credit check');
+    return user;
+  }
+
+  if (user.aiCreditsUsed >= user.dailyAiCredits) {
+    throw new Error('Daily AI credits exhausted. Upgrade to VIP for unlimited scoring.');
+  }
+
+  // Update user AI credits
+  await db
+    .update(users)
+    .set({
+      aiCreditsUsed: sql`${users.aiCreditsUsed} + 1`,
+    })
+    .where(eq(users.id, userId));
+
+  return user;
+}
 
 /**
  * Server action to score a "Write Essay" attempt.
- *
- * @param promptTopic The topic of the essay prompt.
- * @param essayText The user's written essay.
- * @param wordCount The word count of the essay.
- * @returns The AI-generated feedback and score.
  */
 export async function scoreWritingAttempt(
   promptTopic: string,
   essayText: string,
-  wordCount: number
-): Promise<{ success: boolean; feedback?: AIFeedbackData; error?: string }> {
+  wordCount: number,
+  questionId: string
+): Promise<{ success: boolean; feedback?: AIFeedbackData; error?: string; attemptId?: string }> {
   try {
-    const feedback = await scorePteAttempt(QuestionType.WRITE_ESSAY, {
-      promptTopic,
-      userInput: essayText,
-      wordCount,
-    })
-    return { success: true, feedback: feedback as AIFeedbackData }
+    // Get authenticated user
+    const session = await auth.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!session?.user) {
+      return { success: false, error: 'Unauthorized' };
+    }
+
+    // Check credits
+    await checkAndUseCredits(session.user.id);
+
+    // Score using Gemini
+    const feedback = await scorePteAttemptV2(QuestionType.WRITE_ESSAY, {
+      questionContent: promptTopic,
+      submission: { text: essayText },
+    });
+
+    // Save to database
+    const attempt = await savePteAttempt({
+      userId: session.user.id,
+      questionId,
+      questionType: QuestionType.WRITE_ESSAY,
+      responseText: essayText,
+      aiFeedback: feedback,
+    });
+
+    // Track AI usage
+    await trackAIUsage({
+      userId: session.user.id,
+      attemptId: attempt.id,
+      provider: 'google',
+      model: 'gemini-1.5-pro-latest',
+      totalTokens: 0,
+      cost: 0,
+    });
+
+    return { success: true, feedback, attemptId: attempt.id };
   } catch (error) {
-    console.error('Error scoring writing attempt:', error)
+    console.error('Error scoring writing attempt:', error);
     return {
       success: false,
-      error:
-        error instanceof Error ? error.message : 'An unknown error occurred.',
-    }
+      error: error instanceof Error ? error.message : 'An unknown error occurred.',
+    };
   }
 }
 
 /**
  * Server action to score a "Read Aloud" speaking attempt.
- *
- * @param audioFile The user's recorded audio as a File object.
- * @param originalText The original text the user was supposed to read.
- * @param questionId The ID of the question.
- * @returns The AI-generated feedback and score.
  */
 export async function scoreReadAloudAttempt(
   audioFile: File,
   originalText: string,
   questionId: string
-): Promise<{ success: boolean; feedback?: SpeakingFeedbackData; audioUrl?: string; error?: string }> {
+): Promise<{ success: boolean; feedback?: SpeakingFeedbackData; audioUrl?: string; error?: string; attemptId?: string }> {
   try {
+    // Get authenticated user
+    const session = await auth.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!session?.user) {
+      return { success: false, error: 'Unauthorized' };
+    }
+
+    // Check credits
+    await checkAndUseCredits(session.user.id);
+
     // 1. Upload audio to Vercel Blob storage
     const blob = await upload(
-      `pte/speaking/${questionId}/${audioFile.name}`,
+      `pte/speaking/${questionId}/${Date.now()}-${audioFile.name}`,
       audioFile,
       {
         access: 'public',
       }
-    )
+    );
 
-    // 2. Transcribe audio using real transcription service
-    let userTranscript = ''
-    try {
-      const { getTranscriber } = await import('@/lib/pte/transcription')
-      const transcriber = await getTranscriber()
-      const transcriptionResult = await transcriber.transcribe({ audioUrl: blob.url })
-      userTranscript = transcriptionResult.transcript || ''
-    } catch (error) {
-      console.error('Transcription error:', error)
-      // Continue with empty transcript - AI will still score based on audio analysis
-    }
+    // 2. Score using Gemini with audio transcription
+    const feedback = await scorePteAttemptV2(QuestionType.READ_ALOUD, {
+      questionContent: originalText,
+      submission: { audioUrl: blob.url },
+    });
 
-    // 3. Score the attempt using AI
-    const feedback = await scorePteAttempt(QuestionType.READ_ALOUD, {
-      originalText,
-      userTranscript,
-    })
+    // 3. Save to database
+    const attempt = await savePteAttempt({
+      userId: session.user.id,
+      questionId,
+      questionType: QuestionType.READ_ALOUD,
+      responseAudioUrl: blob.url,
+      aiFeedback: feedback,
+    });
 
-    return { success: true, feedback: feedback as SpeakingFeedbackData, audioUrl: blob.url }
+    // 4. Track AI usage
+    await trackAIUsage({
+      userId: session.user.id,
+      attemptId: attempt.id,
+      provider: 'google',
+      model: 'gemini-1.5-pro-latest',
+      totalTokens: 0,
+      cost: 0,
+    });
+
+    return { success: true, feedback: feedback as SpeakingFeedbackData, audioUrl: blob.url, attemptId: attempt.id };
   } catch (error) {
-    console.error('Error scoring Read Aloud attempt:', error)
+    console.error('Error scoring Read Aloud attempt:', error);
     return {
       success: false,
-      error:
-        error instanceof Error ? error.message : 'An unknown error occurred.',
+      error: error instanceof Error ? error.message : 'An unknown error occurred.',
+    };
+  }
+}
+
+/**
+ * Server action to score any Speaking question type (Repeat Sentence, Describe Image, etc.)
+ */
+export async function scoreSpeakingAttempt(
+  type: QuestionType,
+  audioFile: File,
+  questionContent: string,
+  questionId: string
+): Promise<{ success: boolean; feedback?: SpeakingFeedbackData; audioUrl?: string; error?: string; attemptId?: string }> {
+  try {
+    const session = await auth.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!session?.user) {
+      return { success: false, error: 'Unauthorized' };
     }
+
+    // Check credits
+    await checkAndUseCredits(session.user.id);
+
+    // 1. Upload audio to Vercel Blob
+    const blob = await upload(
+      `pte/speaking/${type.toLowerCase().replace(/\s+/g, '-')}/${questionId}/${Date.now()}-${audioFile.name}`,
+      audioFile,
+      {
+        access: 'public',
+      }
+    );
+
+    // 2. Score using Gemini V2
+    const feedback = await scorePteAttemptV2(type, {
+      questionContent,
+      submission: { audioUrl: blob.url },
+    });
+
+    // 3. Save to database
+    const attempt = await savePteAttempt({
+      userId: session.user.id,
+      questionId,
+      questionType: type,
+      responseAudioUrl: blob.url,
+      aiFeedback: feedback,
+    });
+
+    // 4. Track usage
+    await trackAIUsage({
+      userId: session.user.id,
+      attemptId: attempt.id,
+      provider: 'google',
+      model: 'gemini-1.5-pro-latest',
+      totalTokens: 0,
+      cost: 0,
+    });
+
+    return { success: true, feedback, audioUrl: blob.url, attemptId: attempt.id };
+  } catch (error) {
+    console.error(`Error scoring ${type} attempt:`, error);
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'An unknown error occurred.',
+    };
   }
 }
 
 /**
  * Server action to score a Reading attempt.
- *
- * @param type The specific type of the reading question.
- * @param questionText The text of the question.
- * @param options Options for multiple choice questions.
- * @param paragraphs Paragraphs for reorder paragraphs question.
- * @param answerKey The correct answer(s) for the question.
- * @param userResponse The user's response to the question.
- * @returns The AI-generated feedback and score.
  */
 export async function scoreReadingAttempt(
   type:
@@ -106,41 +243,71 @@ export async function scoreReadingAttempt(
     | QuestionType.READING_BLANKS
     | QuestionType.READING_WRITING_BLANKS,
   questionText: string,
+  questionId: string,
   options: string[] | undefined,
   paragraphs: string[] | undefined,
   answerKey: any,
   userResponse: any
-): Promise<{ success: boolean; feedback?: AIFeedbackData; error?: string }> {
+): Promise<{ success: boolean; feedback?: AIFeedbackData; error?: string; attemptId?: string }> {
   try {
-    const feedback = await scorePteAttempt(type, {
-      questionText,
-      options,
-      paragraphs,
-      answerKey,
-      userResponse,
-    })
-    return { success: true, feedback: feedback as AIFeedbackData }
+    // Get authenticated user
+    const session = await auth.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!session?.user) {
+      return { success: false, error: 'Unauthorized' };
+    }
+
+    // Check credits
+    await checkAndUseCredits(session.user.id);
+
+    // Build question content
+    let questionContent = questionText;
+    if (paragraphs) {
+      questionContent += '\n\nParagraphs:\n' + paragraphs.map((p, i) => `${i + 1}. ${p}`).join('\n');
+    }
+    if (options) {
+      questionContent += '\n\nOptions:\n' + options.map((o, i) => `${i + 1}. ${o}`).join('\n');
+    }
+
+    // Score using Gemini
+    const feedback = await scorePteAttemptV2(type, {
+      questionContent,
+      submission: { text: JSON.stringify(userResponse) },
+    });
+
+    // Save to database
+    const attempt = await savePteAttempt({
+      userId: session.user.id,
+      questionId,
+      questionType: type,
+      responseData: { userResponse, answerKey },
+      aiFeedback: feedback,
+    });
+
+    // Track AI usage
+    await trackAIUsage({
+      userId: session.user.id,
+      attemptId: attempt.id,
+      provider: 'google',
+      model: 'gemini-1.5-flash-latest',
+      totalTokens: 0,
+      cost: 0,
+    });
+
+    return { success: true, feedback, attemptId: attempt.id };
   } catch (error) {
-    console.error('Error scoring reading attempt:', error)
+    console.error('Error scoring reading attempt:', error);
     return {
       success: false,
-      error:
-        error instanceof Error ? error.message : 'An unknown error occurred.',
-    }
+      error: error instanceof Error ? error.message : 'An unknown error occurred.',
+    };
   }
 }
 
 /**
  * Server action to score a Listening attempt.
- *
- * @param type The specific type of the listening question.
- * @param questionText The text of the question (if applicable).
- * @param options Options for multiple choice questions.
- * @param wordBank Word bank for fill in the blanks questions.
- * @param audioTranscript The original transcript of the audio played.
- * @param answerKey The correct answer(s) for the question.
- * @param userResponse The user's response to the question.
- * @returns The AI-generated feedback and score.
  */
 export async function scoreListeningAttempt(
   type:
@@ -153,34 +320,75 @@ export async function scoreListeningAttempt(
     | QuestionType.HIGHLIGHT_INCORRECT_WORDS
     | QuestionType.WRITE_FROM_DICTATION,
   questionText: string | undefined,
+  questionId: string,
   options: string[] | undefined,
   wordBank: string[] | undefined,
-  audioTranscript: string | undefined, // Essential for most listening types
+  audioTranscript: string | undefined,
   answerKey: any,
   userResponse: any
-): Promise<{ success: boolean; feedback?: AIFeedbackData; error?: string }> {
+): Promise<{ success: boolean; feedback?: AIFeedbackData; error?: string; attemptId?: string }> {
   try {
-    let wordCount: number | undefined
-    if (type === QuestionType.SUMMARIZE_SPOKEN_TEXT) {
-      wordCount = countWords(userResponse as string)
+    // Get authenticated user
+    const session = await auth.api.getSession({
+      headers: await headers(),
+    });
+
+    if (!session?.user) {
+      return { success: false, error: 'Unauthorized' };
     }
 
-    const feedback = await scorePteAttempt(type, {
-      questionText,
-      options,
-      wordBank,
-      audioTranscript,
-      answerKey,
-      userResponse,
-      wordCount,
-    })
-    return { success: true, feedback: feedback as AIFeedbackData }
+    // Check credits
+    await checkAndUseCredits(session.user.id);
+
+    let wordCount: number | undefined;
+    if (type === QuestionType.SUMMARIZE_SPOKEN_TEXT) {
+      wordCount = countWords(userResponse as string);
+    }
+
+    // Build question content
+    let questionContent = questionText || '';
+    if (audioTranscript) {
+      questionContent += '\n\nAudio Transcript:\n' + audioTranscript;
+    }
+    if (options) {
+      questionContent += '\n\nOptions:\n' + options.map((o, i) => `${i + 1}. ${o}`).join('\n');
+    }
+    if (wordBank) {
+      questionContent += '\n\nWord Bank:\n' + wordBank.join(', ');
+    }
+
+    // Score using Gemini
+    const feedback = await scorePteAttemptV2(type, {
+      questionContent,
+      submission: { text: typeof userResponse === 'string' ? userResponse : JSON.stringify(userResponse) },
+    });
+
+    // Save to database
+    const attempt = await savePteAttempt({
+      userId: session.user.id,
+      questionId,
+      questionType: type,
+      responseText: typeof userResponse === 'string' ? userResponse : undefined,
+      responseData: typeof userResponse === 'string' ? undefined : { userResponse, answerKey },
+      aiFeedback: feedback,
+    });
+
+    // Track AI usage
+    await trackAIUsage({
+      userId: session.user.id,
+      attemptId: attempt.id,
+      provider: 'google',
+      model: 'gemini-1.5-flash-latest',
+      totalTokens: 0,
+      cost: 0,
+    });
+
+    return { success: true, feedback, attemptId: attempt.id };
   } catch (error) {
-    console.error('Error scoring listening attempt:', error)
+    console.error('Error scoring listening attempt:', error);
     return {
       success: false,
-      error:
-        error instanceof Error ? error.message : 'An unknown error occurred.',
-    }
+      error: error instanceof Error ? error.message : 'An unknown error occurred.',
+    };
   }
 }

@@ -39,27 +39,6 @@ export async function getAIFeedback(
   }
 }
 
-/**
- * Legacy mock function - now calls real AI
- * @deprecated Use getAIFeedback instead
- */
-export function getMockAIFeedback(transcript: string): AIFeedbackData {
-  // This is a fallback - should not be used in production
-  // Real implementation should use getAIFeedback
-  return {
-    overallScore: 0,
-    pronunciation: { score: 0, feedback: 'Mock feedback - use real AI scoring' },
-    fluency: { score: 0, feedback: 'Mock feedback - use real AI scoring' },
-    content: { score: 0, feedback: 'Mock feedback - use real AI scoring' },
-    suggestions: ['Use real AI scoring'],
-    strengths: [],
-    areasForImprovement: ['Enable real AI scoring'],
-  }
-}
-
-/**
- * Calculate weighted score from AI feedback
- */
 export function getWeightedScore(
   feedback: AIFeedbackData,
   section: TestSection

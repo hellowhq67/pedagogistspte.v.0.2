@@ -1,5 +1,6 @@
 import { AIFeedbackData, QuestionType } from '@/lib/types'
 import { z } from 'zod'
+import { AIFeedbackDataSchema, SpeakingFeedbackDataSchema } from './schemas'
 
 const PTE_SCORING_CRITERIA_WRITING = {
   CONTENT: `Content: 0-3 points. Does the essay address all parts of the topic? Is the opinion clear and well-supported with relevant examples and details?
@@ -368,20 +369,28 @@ export const getPromptForQuestionType = (
 }
 
 export const SCORING_ZOD_SCHEMA: Record<QuestionType, any> = {
-  [QuestionType.WRITE_ESSAY]: AIFeedbackData,
-  [QuestionType.READ_ALOUD]: AIFeedbackData,
-  [QuestionType.MULTIPLE_CHOICE_SINGLE]: AIFeedbackData,
-  [QuestionType.MULTIPLE_CHOICE_MULTIPLE]: AIFeedbackData,
-  [QuestionType.REORDER_PARAGRAPHS]: AIFeedbackData,
-  [QuestionType.READING_BLANKS]: AIFeedbackData,
-  [QuestionType.READING_WRITING_BLANKS]: AIFeedbackData,
-  [QuestionType.SUMMARIZE_SPOKEN_TEXT]: AIFeedbackData,
-  [QuestionType.LISTENING_MULTIPLE_CHOICE_MULTIPLE]: AIFeedbackData,
-  [QuestionType.LISTENING_BLANKS]: AIFeedbackData,
-  [QuestionType.HIGHLIGHT_CORRECT_SUMMARY]: AIFeedbackData,
-  [QuestionType.LISTENING_MULTIPLE_CHOICE_SINGLE]: AIFeedbackData,
-  [QuestionType.SELECT_MISSING_WORD]: AIFeedbackData,
-  [QuestionType.HIGHLIGHT_INCORRECT_WORDS]: AIFeedbackData,
-  [QuestionType.WRITE_FROM_DICTATION]: AIFeedbackData,
-  // Add other schemas here...
+  [QuestionType.WRITE_ESSAY]: AIFeedbackDataSchema,
+  [QuestionType.READ_ALOUD]: SpeakingFeedbackDataSchema,
+  [QuestionType.MULTIPLE_CHOICE_SINGLE]: AIFeedbackDataSchema,
+  [QuestionType.MULTIPLE_CHOICE_MULTIPLE]: AIFeedbackDataSchema,
+  [QuestionType.REORDER_PARAGRAPHS]: AIFeedbackDataSchema,
+  [QuestionType.READING_BLANKS]: AIFeedbackDataSchema,
+  [QuestionType.READING_WRITING_BLANKS]: AIFeedbackDataSchema,
+  [QuestionType.SUMMARIZE_SPOKEN_TEXT]: AIFeedbackDataSchema,
+  [QuestionType.LISTENING_MULTIPLE_CHOICE_MULTIPLE]: AIFeedbackDataSchema,
+  [QuestionType.LISTENING_BLANKS]: AIFeedbackDataSchema,
+  [QuestionType.HIGHLIGHT_CORRECT_SUMMARY]: AIFeedbackDataSchema,
+  [QuestionType.LISTENING_MULTIPLE_CHOICE_SINGLE]: AIFeedbackDataSchema,
+  [QuestionType.SELECT_MISSING_WORD]: AIFeedbackDataSchema,
+  [QuestionType.HIGHLIGHT_INCORRECT_WORDS]: AIFeedbackDataSchema,
+  [QuestionType.WRITE_FROM_DICTATION]: AIFeedbackDataSchema,
+  // Speaking others (for V2 scoring)
+  [QuestionType.REPEAT_SENTENCE]: SpeakingFeedbackDataSchema,
+  [QuestionType.DESCRIBE_IMAGE]: SpeakingFeedbackDataSchema,
+  [QuestionType.RE_TELL_LECTURE]: SpeakingFeedbackDataSchema,
+  [QuestionType.ANSWER_SHORT_QUESTION]: SpeakingFeedbackDataSchema,
+  [QuestionType.RESPOND_TO_A_SITUATION]: SpeakingFeedbackDataSchema,
+  [QuestionType.SUMMARIZE_GROUP_DISCUSSION]: SpeakingFeedbackDataSchema,
+  // Writing others
+  [QuestionType.SUMMARIZE_WRITTEN_TEXT]: AIFeedbackDataSchema,
 }

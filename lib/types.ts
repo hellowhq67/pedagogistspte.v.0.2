@@ -100,6 +100,12 @@ export interface AnswerData {
   filledBlanks?: { [key: string]: string }
 }
 
+export interface WordMarking {
+  word: string
+  classification: 'good' | 'average' | 'poor' | 'pause' | 'omitted' | 'inserted' | 'filler'
+  feedback?: string
+}
+
 export interface AIFeedbackData {
   overallScore: number
   pronunciation?: {
@@ -126,14 +132,20 @@ export interface AIFeedbackData {
     score: number
     feedback: string
   }
+  accuracy?: {
+    score: number
+    feedback: string
+  }
   structure?: { // Added structure for writing
     score: number,
     feedback: string
   }
+  wordMarking?: WordMarking[]
   suggestions: string[]
   strengths: string[]
   areasForImprovement: string[]
 }
+
 
 // Specific Speaking Feedback Data type (reusing AIFeedbackData)
 export type SpeakingFeedbackData = AIFeedbackData;

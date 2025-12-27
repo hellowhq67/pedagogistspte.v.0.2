@@ -3,25 +3,18 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Mic, Square, Volume2, AlertCircle, ArrowLeft, Play, Loader2, RotateCcw, CheckCircle } from 'lucide-react'
-import { useAudioRecorder } from '../hooks/use-audio-recorder'
+import { Mic, Square, Volume2, AlertCircle, ArrowLeft, Play, Loader2, RotateCcw, CheckCircle, Headphones, Sparkles, Clock } from 'lucide-react'
 import { submitAttempt } from '@/lib/actions/pte'
-import { ScoreDetailsModal } from './score-details-modal'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
-import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
 import { LiveWaveform } from '@/components/ui/live-waveform'
 import { MicSelector } from '@/components/ui/mic-selector'
-import {
-    AudioPlayerProvider,
-    AudioPlayerButton,
-    AudioPlayerProgress,
-    AudioPlayerTime,
-    AudioPlayerDuration,
-    AudioPlayerSpeed,
-} from '@/components/ui/audio-player'
 import { toast } from 'sonner'
+import { useAudioRecorder } from '@/components/pte/hooks/use-audio-recorder'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
+import SpeakingResults from '@/app/practice/_componets/SpeakingResults'
 
 interface RetellLectureProps {
     question: {
@@ -33,23 +26,12 @@ interface RetellLectureProps {
     }
 }
 
-/**
- * Render the Retell Lecture practice interface and manage the end-to-end exercise flow.
- *
- * Manages listening to the lecture, a 10-second preparation countdown, audio recording (max 40s),
- * transcription, scoring, submission, and related UI stages and error handling.
- *
- * @param question - Practice question object with properties: `id`, `title`, optional `promptText`,
- *   optional `promptMediaUrl`, and `difficulty` (e.g., "Easy", "Medium", "Hard")
- * @returns The React element for the Retell Lecture practice interface
- */
 export function RetellLecture({ question }: RetellLectureProps) {
     const router = useRouter()
     const [stage, setStage] = useState<'idle' | 'playing' | 'preparing' | 'recording' | 'processing' | 'complete'>('idle')
     const [prepTime, setPrepTime] = useState(10)
     const [transcript, setTranscript] = useState('')
     const [score, setScore] = useState<any>(null)
-    const [isScoreModalOpen, setIsScoreModalOpen] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [audioUrl, setAudioUrl] = useState<string | null>(null)
     const audioRef = useRef<HTMLAudioElement>(null)
@@ -59,7 +41,6 @@ export function RetellLecture({ question }: RetellLectureProps) {
     const {
         isRecording,
         recordingTime,
-        audioBlob,
         audioLevel,
         error: recorderError,
         startRecording,
@@ -71,6 +52,43 @@ export function RetellLecture({ question }: RetellLectureProps) {
         onRecordingComplete: handleRecordingComplete,
     })
 
+    async function handleRecordingComplete(blob: Blob, duration: number) {
+        setStage('processing')
+        try {
+            const url = URL.createObjectURL(blob)
+            setAudioUrl(url)
+
+            // Mock transcription for now
+            setTimeout(() => {
+                setTranscript('The lecture discussed the fundamental principles of economics and market dynamics.')
+                setStage('complete')
+            }, 1500)
+        } catch (err: any) {
+            setError(err.message || 'Failed to process recording')
+            setStage('idle')
+        }
+    }
+
+    const handlePlayLecture = useCallback(() => {
+        if (!question.promptMediaUrl) {
+            handleBeginPreparing()
+            return
+        }
+        setStage('playing')
+        if (audioRef.current) {
+            audioRef.current.play()
+        }
+    }, [question.promptMediaUrl])
+
+    const handleAudioEnded = useCallback(() => {
+        handleBeginPreparing()
+    }, [])
+
+    const handleBeginPreparing = () => {
+        setStage('preparing')
+        setPrepTime(10)
+    }
+
     const handleStartRecording = useCallback(async () => {
         playBeep()
         setStage('recording')
@@ -78,33 +96,20 @@ export function RetellLecture({ question }: RetellLectureProps) {
     }, [startRecording, playBeep, selectedDeviceId])
 
     useEffect(() => {
+        let timer: NodeJS.Timeout
         if (stage === 'preparing' && prepTime > 0) {
-            const timer = setTimeout(() => setPrepTime((t) => t - 1), 1000)
-            return () => clearTimeout(timer)
+            timer = setTimeout(() => setPrepTime(prepTime - 1), 1000)
         } else if (stage === 'preparing' && prepTime === 0) {
             handleStartRecording()
         }
+        return () => clearTimeout(timer)
     }, [stage, prepTime, handleStartRecording])
 
     const handleBegin = () => {
         setStage('idle')
         setError(null)
+        setScore(null)
         resetRecording()
-    }
-
-    const handlePlayLecture = () => {
-        if (!question.promptMediaUrl) return
-
-        setStage('playing')
-
-        if (audioRef.current) {
-            audioRef.current.play()
-        }
-    }
-
-    const handleAudioEnded = () => {
-        setStage('preparing')
-        setPrepTime(10)
     }
 
     const handleStopRecording = useCallback(() => {
@@ -112,36 +117,8 @@ export function RetellLecture({ question }: RetellLectureProps) {
         stopRecording()
     }, [stopRecording, playBeep])
 
-    /**
-     * Process a finished recording: prepare the audio for playback, transcribe it, and advance the UI to the completion state.
-     *
-     * Processes the provided audio Blob, makes the recording available for playback, obtains a transcription, and updates component state
-     * so the UI transitions to the "complete" stage. If processing fails, stores an error message and returns the UI to the "idle" stage.
-     *
-     * @param blob - The recorded audio blob
-     * @param duration - The recording duration in milliseconds
-     */
-    async function handleRecordingComplete(blob: Blob, duration: number) {
-        setStage('processing')
-
-        try {
-            const audioFile = new File([blob], 'recording.webm', { type: 'audio/webm' })
-            const url = URL.createObjectURL(blob)
-            setAudioUrl(url)
-
-            const transcribedText = await transcribeAudio(blob)
-            setTranscript(transcribedText)
-
-            setStage('complete')
-        } catch (err: any) {
-            setError(err.message || 'Failed to process recording')
-            setStage('idle')
-        }
-    }
-
     const handleSubmit = async () => {
         if (!audioUrl || !transcript) return
-
         setIsSubmitting(true)
         try {
             const result = await submitAttempt({
@@ -151,352 +128,251 @@ export function RetellLecture({ question }: RetellLectureProps) {
                 transcript: transcript,
                 durationMs: recordingTime,
             })
-
             setScore(result.score)
-            setIsScoreModalOpen(true)
-
-            toast.success('Your response has been submitted and scored!')
-
-            // router.push(`/pte/academic/practice/speaking/retell-lecture/attempts/${result.id}`)
+            toast.success('Response scored successfully!')
         } catch (err: any) {
             setError(err.message || 'Failed to submit attempt')
-            toast.error('Failed to submit attempt. Please try again.')
+            toast.error('Submission failed.')
         } finally {
             setIsSubmitting(false)
         }
     }
 
-    async function transcribeAudio(blob: Blob): Promise<string> {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve('This is a sample retelling of the lecture covering the main points discussed.')
-            }, 1000)
-        })
-    }
-
-    const formatTime = (ms: number) => {
-        const seconds = Math.floor(ms / 1000)
-        return `${seconds}s`
+    if (score) {
+        return (
+            <div className="space-y-8">
+                <SpeakingResults scoreData={score} />
+                <div className="flex justify-center">
+                    <Button
+                        size="lg"
+                        variant="outline"
+                        onClick={handleBegin}
+                        className="rounded-2xl font-black uppercase tracking-widest px-12 h-14"
+                    >
+                        Try Again
+                    </Button>
+                </div>
+            </div>
+        )
     }
 
     return (
-        <div className="min-h-screen bg-background">
-            {/* Header */}
-            <div className="border-b border-border/40 bg-card/30 backdrop-blur-sm sticky top-0 z-10">
-                <div className="container mx-auto px-6 py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => router.back()}
-                                className="gap-2"
-                            >
-                                <ArrowLeft className="h-4 w-4" />
-                                Back
-                            </Button>
-                            <div className="h-6 w-px bg-border/40" />
-                            <div>
-                                <h1 className="text-lg font-semibold">{question.title}</h1>
-                                <p className="text-xs text-muted-foreground">Retell Lecture</p>
-                            </div>
-                        </div>
-                        <div className={`px-3 py-1 rounded-full text-xs font-medium ${question.difficulty === 'Easy' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                            question.difficulty === 'Medium' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                                'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                            }`}>
-                            {question.difficulty}
-                        </div>
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            {/* Header / Info Bar */}
+            <div className="flex items-center justify-between p-6 bg-card/30 backdrop-blur-sm border border-border/40 rounded-[32px]">
+                <div className="flex items-center gap-6">
+                    <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Prep</span>
+                        <span className="text-sm font-black flex items-center gap-1.5 text-primary">
+                            <Clock className="w-3.5 h-3.5" />
+                            10s
+                        </span>
+                    </div>
+                    <div className="w-px h-8 bg-border/50" />
+                    <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Target</span>
+                        <span className="text-sm font-black flex items-center gap-1.5">
+                            <Mic className="w-3.5 h-3.5 text-primary" />
+                            40s Limit
+                        </span>
                     </div>
                 </div>
+
+                <Badge variant="outline" className="rounded-full px-4 py-1 font-black text-[10px] uppercase tracking-widest bg-primary/5 text-primary border-primary/20">
+                    {question.difficulty || 'Medium'}
+                </Badge>
             </div>
 
-            <div className="container mx-auto px-6 py-8 max-w-4xl">
-                {/* Hidden audio element */}
-                {question.promptMediaUrl && (
-                    <audio
-                        ref={audioRef}
-                        src={question.promptMediaUrl}
-                        onEnded={handleAudioEnded}
-                        className="hidden"
-                    />
-                )}
-
+            {/* Content Area */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6">
-                    {/* Instructions */}
-                    <Card className="border-border/40 bg-card/50">
-                        <CardContent className="pt-6">
-                            <div className="space-y-3">
-                                <div className="flex items-start gap-3">
-                                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                        <span className="text-xs font-semibold text-primary">1</span>
+                    <div className="flex items-center gap-2 text-primary font-black uppercase tracking-[0.2em] text-[10px] mb-2">
+                        <Sparkles className="size-4" />
+                        <span>Listen and retell the lecture</span>
+                    </div>
+
+                    <Card className="border-border/40 rounded-[48px] bg-white dark:bg-[#121214] overflow-hidden shadow-xl shadow-black/5">
+                        <CardContent className="p-8 md:p-12 space-y-8">
+                            <div className="size-20 rounded-3xl bg-primary/5 flex items-center justify-center">
+                                <Headphones className="size-10 text-primary" />
+                            </div>
+                            <div className="space-y-4">
+                                <h3 className="text-2xl font-black tracking-tight">{question.title}</h3>
+                                {question.promptText && (
+                                    <div className="p-6 bg-muted/30 rounded-3xl border border-border/40">
+                                        <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-2">Lecture Notes</p>
+                                        <p className="text-foreground/80 leading-relaxed font-medium">
+                                            {question.promptText}
+                                        </p>
                                     </div>
-                                    <div>
-                                        <p className="text-sm font-medium">Listen to the lecture</p>
-                                        <p className="text-xs text-muted-foreground">Pay attention to key points</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                        <span className="text-xs font-semibold text-primary">2</span>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-medium">Prepare your response</p>
-                                        <p className="text-xs text-muted-foreground">10 seconds to organize your thoughts</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                        <span className="text-xs font-semibold text-primary">3</span>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-medium">Retell the lecture</p>
-                                        <p className="text-xs text-muted-foreground">Record your response (max 40 seconds)</p>
-                                    </div>
-                                </div>
+                                )}
                             </div>
                         </CardContent>
                     </Card>
+                </div>
 
-                    {/* Lecture Player */}
-                    {question.promptMediaUrl && (
-                        <Card className="border-border/40 bg-card/50">
-                            <CardContent className="pt-6">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                                            <Volume2 className="h-6 w-6 text-primary" />
-                                        </div>
-                                        <div>
-                                            <p className="font-medium">Lecture Audio</p>
-                                            <p className="text-xs text-muted-foreground">
-                                                {stage === 'idle' ? 'Ready to play' : stage === 'playing' ? 'Playing...' : 'Completed'}
-                                            </p>
-                                        </div>
+                <Card className="border-border/40 rounded-[48px] bg-card/30 backdrop-blur-sm overflow-hidden border-none shadow-none lg:mt-11">
+                    <CardContent className="p-8 md:p-12">
+                        {question.promptMediaUrl && (
+                            <audio ref={audioRef} src={question.promptMediaUrl} onEnded={handleAudioEnded} className="hidden" />
+                        )}
+
+                        <div className="relative">
+                            {stage === 'idle' && (
+                                <div
+                                    key="idle"
+                                    className="text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500"
+                                >
+                                    <div className="space-y-2">
+                                        <h3 className="text-2xl font-black tracking-tight">Ready to Listen?</h3>
+                                        <p className="text-sm font-medium text-muted-foreground">The lecture will play once. Take notes while listening.</p>
                                     </div>
-                                    <Button
-                                        onClick={handlePlayLecture}
-                                        disabled={stage !== 'idle'}
-                                        size="lg"
-                                    >
-                                        <Play className="mr-2 h-5 w-5" />
-                                        Play Lecture
+                                    <div className="max-w-xs mx-auto">
+                                        <MicSelector value={selectedDeviceId} onValueChange={setSelectedDeviceId} />
+                                    </div>
+                                    <Button onClick={handlePlayLecture} size="lg" className="rounded-2xl font-black h-16 px-12 text-lg shadow-xl shadow-primary/20">
+                                        Start Lecture
                                     </Button>
                                 </div>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {/* Lecture text reference */}
-                    {question.promptText && (
-                        <Alert className="border-border/40 bg-muted/20">
-                            <AlertCircle className="h-4 w-4" />
-                            <AlertDescription className="text-sm">
-                                <span className="font-medium">Practice reference:</span> {question.promptText}
-                                <p className="text-xs text-muted-foreground mt-1">(Not shown in actual test)</p>
-                            </AlertDescription>
-                        </Alert>
-                    )}
-
-                    {/* Practice Area */}
-                    <Card className="border-border/40 bg-card/50">
-                        <CardContent className="pt-6">
-
-                            {stage === 'idle' && (
-                                <motion.div
-                                    key="idle"
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    className="text-center py-8 space-y-4"
-                                >
-                                    <div className="w-full max-w-xs mx-auto mb-6">
-                                        <MicSelector
-                                            value={selectedDeviceId}
-                                            onValueChange={setSelectedDeviceId}
-                                        />
-                                    </div>
-                                    <p className="text-sm text-muted-foreground">Click &quot;Play Lecture&quot; to begin</p>
-                                </motion.div>
                             )}
 
                             {stage === 'playing' && (
-                                <motion.div
+                                <div
                                     key="playing"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-
-                                    className="text-center py-12 space-y-4"
+                                    className="text-center space-y-8 animate-in fade-in duration-500"
                                 >
-                                    <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-                                    <div>
-                                        <h3 className="font-semibold mb-1">Listen carefully</h3>
-                                        <p className="text-sm text-muted-foreground">Take mental notes of key points</p>
+                                    <div className="flex justify-center gap-2 h-12 items-center">
+                                        {[1, 2, 3, 4, 5, 6, 7].map(i => (
+                                            <div
+                                                key={i}
+                                                className="w-2 bg-primary rounded-full animate-bounce"
+                                                style={{ animationDelay: `${i * 0.1}s`, animationDuration: '0.6s' }}
+                                            />
+                                        ))}
                                     </div>
-                                </motion.div>
+                                    <div className="space-y-1">
+                                        <p className="text-xl font-black text-primary animate-pulse uppercase tracking-widest">Listening Phase</p>
+                                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Pay close attention to key points</p>
+                                    </div>
+                                    <Button variant="ghost" onClick={handleBeginPreparing} className="font-black uppercase tracking-widest text-xs">
+                                        Skip to Prep
+                                    </Button>
+                                </div>
                             )}
 
                             {stage === 'preparing' && (
-                                <motion.div
+                                <div
                                     key="preparing"
-                                    initial={{ opacity: 0, scale: 0.95 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-
-                                    className="text-center py-8 space-y-6"
+                                    className="text-center space-y-8 animate-in fade-in zoom-in-90 duration-500"
                                 >
-                                    <div className="relative w-32 h-32 mx-auto">
-                                        <svg className="w-full h-full -rotate-90">
+                                    <div className="relative size-40 mx-auto flex items-center justify-center">
+                                        <span className="text-7xl font-black text-primary tabular-nums">{prepTime}</span>
+                                        <svg className="absolute inset-0 size-full -rotate-90">
                                             <circle
-                                                cx="64"
-                                                cy="64"
-                                                r="56"
-                                                stroke="currentColor"
-                                                strokeWidth="8"
+                                                cx="50%"
+                                                cy="50%"
+                                                r="48%"
                                                 fill="none"
-                                                className="text-muted/20"
-                                            />
-                                            <circle
-                                                cx="64"
-                                                cy="64"
-                                                r="56"
                                                 stroke="currentColor"
-                                                strokeWidth="8"
-                                                fill="none"
-                                                strokeDasharray={`${2 * Math.PI * 56}`}
-                                                strokeDashoffset={`${2 * Math.PI * 56 * (1 - prepTime / 10)}`}
+                                                strokeWidth="4"
+                                                strokeDasharray={`${(prepTime / 10) * 100} 100`}
+                                                pathLength="100"
                                                 className="text-primary transition-all duration-1000"
-                                                strokeLinecap="round"
                                             />
                                         </svg>
-                                        <div className="absolute inset-0 flex items-center justify-center">
-                                            <span className="text-4xl font-bold">{prepTime}</span>
-                                        </div>
                                     </div>
-                                    <div>
-                                        <h3 className="font-semibold mb-1">Preparation Time</h3>
-                                        <p className="text-sm text-muted-foreground">Organize your thoughts</p>
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Preparation Time</p>
+                                        <p className="font-bold text-foreground/80">Organize your thoughts</p>
                                     </div>
-                                </motion.div>
+                                    <Button variant="ghost" onClick={handleStartRecording} className="font-black uppercase tracking-widest text-xs">
+                                        Start Now
+                                    </Button>
+                                </div>
                             )}
 
                             {stage === 'recording' && (
-                                <motion.div
+                                <div
                                     key="recording"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-                                    className="py-8 space-y-6"
+                                    className="space-y-10 animate-in fade-in duration-500"
                                 >
-                                    <div className="w-full max-w-xs mx-auto h-32 flex items-center justify-center">
+                                    <div className="h-32 flex items-center justify-center">
                                         <LiveWaveform
                                             isActive={true}
                                             audioLevel={audioLevel}
-                                            deviceId={selectedDeviceId}
-                                            className="text-primary w-full h-full"
+                                            className="w-full h-full text-primary"
                                         />
                                     </div>
-
-                                    <div className="text-center">
-                                        <div className="text-4xl font-mono font-bold mb-2">
-                                            {formatTime(recordingTime)}
+                                    <div className="text-center space-y-2">
+                                        <div className="flex items-center justify-center gap-2 text-rose-500">
+                                            <div className="size-2 rounded-full bg-rose-500 animate-pulse" />
+                                            <span className="text-sm font-black uppercase tracking-widest">Recording</span>
                                         </div>
-                                        <div className="text-sm text-muted-foreground">
-                                            / 40s
-                                        </div>
+                                        <span className="text-5xl font-black tabular-nums">{Math.floor(recordingTime / 1000)}s</span>
+                                        <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest">/ 40s Limit</p>
                                     </div>
                                     <div className="flex justify-center">
                                         <Button
-                                            onClick={handleStopRecording}
                                             variant="destructive"
                                             size="lg"
-                                            className="rounded-full px-8 h-12 shadow-lg hover:shadow-xl transition-all hover:scale-105"
+                                            onClick={handleStopRecording}
+                                            className="rounded-full size-24 shadow-2xl shadow-rose-500/30 transition-transform hover:scale-110 active:scale-95"
                                         >
-                                            <Square className="mr-2 h-5 w-5 fill-current" />
-                                            Stop Recording
-                                        </Button>
-                                    </div>
-                                </motion.div>
-                            )}
-
-                            {stage === 'processing' && (
-                                <motion.div
-                                    key="processing"
-                                    initial={{ opacity: 0 }}
-                                    animate={{ opacity: 1 }}
-
-                                    className="text-center py-12 space-y-4"
-                                >
-                                    <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-                                    <div>
-                                        <h3 className="font-semibold mb-1">Analyzing your response</h3>
-                                        <p className="text-sm text-muted-foreground">This will take a few seconds...</p>
-                                    </div>
-                                </motion.div>
-                            )}
-
-                            {stage === 'complete' && (
-                                <div className="flex flex-col items-center gap-6 w-full max-w-md mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-                                    <Card className="w-full border-border/50 bg-muted/30">
-                                        <CardContent className="p-4">
-                                            <AudioPlayerProvider>
-                                                <div className="flex items-center gap-4">
-                                                    <AudioPlayerButton item={{ id: 'recording', src: audioUrl || '' }} />
-                                                    <AudioPlayerTime />
-                                                    <AudioPlayerProgress className="flex-1" />
-                                                    <AudioPlayerDuration />
-                                                    <AudioPlayerSpeed />
-                                                </div>
-                                            </AudioPlayerProvider>
-                                        </CardContent>
-                                    </Card>
-
-                                    <div className="flex gap-3 w-full">
-                                        <Button variant="outline" onClick={() => {
-                                            handleBegin()
-                                            setScore(null)
-                                            setTranscript('')
-                                            setAudioUrl(null)
-                                        }} className="flex-1 rounded-full h-12">
-                                            <RotateCcw className="mr-2 h-4 w-4" />
-                                            Retry
-                                        </Button>
-                                        <Button onClick={handleSubmit} disabled={isSubmitting} className="flex-1 rounded-full h-12">
-                                            {isSubmitting ? (
-                                                <>
-                                                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                                                    Submitting...
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <CheckCircle className="mr-2 h-4 w-4" />
-                                                    Submit Answer
-                                                </>
-                                            )}
+                                            <Square className="size-10 fill-current" />
                                         </Button>
                                     </div>
                                 </div>
                             )}
 
+                            {(stage === 'processing' || stage === 'complete') && (
+                                <div
+                                    key="processing"
+                                    className="space-y-8 animate-in fade-in duration-500"
+                                >
+                                    {stage === 'processing' ? (
+                                        <div className="text-center py-12 space-y-4">
+                                            <Loader2 className="size-12 text-primary animate-spin mx-auto" />
+                                            <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">Analyzing response</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-8">
+                                            <div className="p-6 bg-muted/50 rounded-[32px] border border-border/40">
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-3">AI Transcription</p>
+                                                <p className="font-bold leading-relaxed italic text-foreground/80">&ldquo;{transcript}&rdquo;</p>
+                                            </div>
 
-                            {/* Error display */}
-                            {(error || recorderError) && (
-                                <Alert variant="destructive" className="mt-4">
-                                    <AlertCircle className="h-4 w-4" />
-                                    <AlertDescription>{error || recorderError}</AlertDescription>
-                                </Alert>
+                                            <div className="p-4 bg-background rounded-3xl border border-border/40">
+                                                <audio src={audioUrl!} controls className="w-full" />
+                                            </div>
+
+                                            <div className="flex gap-4">
+                                                <Button variant="outline" onClick={handleBegin} className="flex-1 rounded-2xl font-black h-14">
+                                                    <RotateCcw className="mr-2 size-4" />
+                                                    Retry
+                                                </Button>
+                                                <Button
+                                                    onClick={handleSubmit}
+                                                    disabled={isSubmitting}
+                                                    className="flex-1 rounded-2xl font-black h-14 shadow-xl shadow-primary/20"
+                                                >
+                                                    {isSubmitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <CheckCircle className="mr-2 size-4" />}
+                                                    Submit
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
                             )}
-                        </CardContent>
-                    </Card>
-                </div>
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
-            {/* Score Details Modal */}
-            {score && (
-                <ScoreDetailsModal
-                    open={isScoreModalOpen}
-                    onOpenChange={setIsScoreModalOpen}
-                    score={score}
-                    transcript={transcript}
-                    originalText={question.promptText || 'Lecture content'}
-                />
+            {recorderError && (
+                <Alert variant="destructive" className="rounded-[32px] bg-rose-500/5 border-rose-500/20">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="font-bold">{recorderError}</AlertDescription>
+                </Alert>
             )}
         </div>
     )

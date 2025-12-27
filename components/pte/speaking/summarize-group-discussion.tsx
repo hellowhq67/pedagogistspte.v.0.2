@@ -1,16 +1,20 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Mic, Square, Volume2, AlertCircle, ArrowLeft, Play } from 'lucide-react'
+import { Mic, Square, Volume2, AlertCircle, ArrowLeft, Play, Clock, Sparkles, Loader2, RotateCcw, CheckCircle, Users } from 'lucide-react'
 import { useAudioRecorder } from '../hooks/use-audio-recorder'
 import { submitAttempt } from '@/lib/actions/pte'
-import { ScoreDetailsModal } from './score-details-modal'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
-import { motion } from 'framer-motion'
 import { useRouter } from 'next/navigation'
+import { LiveWaveform } from '@/components/ui/live-waveform'
+import { MicSelector } from '@/components/ui/mic-selector'
+import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
+import SpeakingResults from '@/app/practice/_componets/SpeakingResults'
 
 interface SummarizeGroupDiscussionProps {
     question: {
@@ -27,15 +31,15 @@ export function SummarizeGroupDiscussion({ question }: SummarizeGroupDiscussionP
     const [stage, setStage] = useState<'idle' | 'playing' | 'recording' | 'processing' | 'complete'>('idle')
     const [transcript, setTranscript] = useState('')
     const [score, setScore] = useState<any>(null)
-    const [isScoreModalOpen, setIsScoreModalOpen] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [audioUrl, setAudioUrl] = useState<string | null>(null)
     const audioRef = useRef<HTMLAudioElement>(null)
+    const [selectedDeviceId, setSelectedDeviceId] = useState<string>('')
+    const [isSubmitting, setIsSubmitting] = useState(false)
 
     const {
         isRecording,
         recordingTime,
-        audioBlob,
         audioLevel,
         error: recorderError,
         startRecording,
@@ -43,357 +47,287 @@ export function SummarizeGroupDiscussion({ question }: SummarizeGroupDiscussionP
         resetRecording,
         playBeep,
     } = useAudioRecorder({
-        maxDuration: 120000, // 2 minutes (120 seconds) max
+        maxDuration: 120000, // 2 minutes max
         onRecordingComplete: handleRecordingComplete,
     })
 
-    const handleBegin = () => {
-        setStage('idle')
-        setError(null)
-        resetRecording()
-    }
-
-    const handlePlayDiscussion = () => {
-        if (!question.promptMediaUrl) {
-            // If no audio, start recording immediately
-            handleStartRecording()
-            return
-        }
-
-        setStage('playing')
-
-        if (audioRef.current) {
-            audioRef.current.play()
-        }
-    }
-
-    const handleAudioEnded = () => {
-        // Start recording immediately after discussion ends
-        handleStartRecording()
-    }
-
-    const handleStartRecording = async () => {
-        playBeep()
-        setStage('recording')
-        await startRecording()
-    }
-
-    const handleStopRecording = () => {
-        playBeep(660, 200)
-        stopRecording()
-    }
-
     async function handleRecordingComplete(blob: Blob, duration: number) {
         setStage('processing')
-
         try {
-            const audioFile = new File([blob], 'recording.webm', { type: 'audio/webm' })
             const url = URL.createObjectURL(blob)
             setAudioUrl(url)
 
-            const transcribedText = await transcribeAudio(blob)
-            setTranscript(transcribedText)
-
-            const result = await submitAttempt({
-                questionId: question.id,
-                questionType: 'summarize_group_discussion',
-                audioUrl: url,
-                transcript: transcribedText,
-                durationMs: duration,
-            })
-
-            setScore(result.score)
-            setStage('complete')
-            setIsScoreModalOpen(true)
+            // Mock transcription
+            setTimeout(() => {
+                setTranscript("The group discussed the impact of remote work on urban planning and infrastructure development.")
+                setStage('complete')
+            }, 2000)
         } catch (err: any) {
             setError(err.message || 'Failed to process recording')
             setStage('idle')
         }
     }
 
-    async function transcribeAudio(blob: Blob): Promise<string> {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve('Sample summary of group discussion')
-            }, 1000)
-        })
+    const handlePlayDiscussion = () => {
+        if (!question.promptMediaUrl) {
+            handleStartRecording()
+            return
+        }
+        setStage('playing')
+        if (audioRef.current) {
+            audioRef.current.play()
+        }
     }
 
-    const formatTime = (ms: number) => {
-        const totalSeconds = Math.floor(ms / 1000)
-        const minutes = Math.floor(totalSeconds / 60)
-        const seconds = totalSeconds % 60
-        return `${minutes}:${seconds.toString().padStart(2, '0')}`
+    const handleAudioEnded = () => {
+        handleStartRecording()
+    }
+
+    const handleStartRecording = useCallback(async () => {
+        playBeep()
+        setStage('recording')
+        await startRecording(selectedDeviceId)
+    }, [startRecording, playBeep, selectedDeviceId])
+
+    const handleStopRecording = useCallback(() => {
+        playBeep(660, 200)
+        stopRecording()
+    }, [stopRecording, playBeep])
+
+    const handleBegin = () => {
+        setStage('idle')
+        setError(null)
+        setScore(null)
+        resetRecording()
+    }
+
+    const handleSubmit = async () => {
+        if (!audioUrl || !transcript) return
+        setIsSubmitting(true)
+        try {
+            const result = await submitAttempt({
+                questionId: question.id,
+                questionType: 'summarize_group_discussion',
+                audioUrl: audioUrl,
+                transcript: transcript,
+                durationMs: recordingTime,
+            })
+            setScore(result.score)
+            toast.success('Response scored!')
+        } catch (err: any) {
+            setError(err.message || 'Failed to submit')
+            toast.error('Submission failed')
+        } finally {
+            setIsSubmitting(false)
+        }
+    }
+
+    const formatLongTime = (ms: number) => {
+        const mins = Math.floor(ms / 60000)
+        const secs = Math.floor((ms % 60000) / 1000)
+        return `${mins}:${secs.toString().padStart(2, '0')}`
+    }
+
+    if (score) {
+        return (
+            <div className="space-y-8">
+                <SpeakingResults scoreData={score} />
+                <div className="flex justify-center">
+                    <Button
+                        size="lg"
+                        variant="outline"
+                        onClick={handleBegin}
+                        className="rounded-2xl font-black uppercase tracking-widest px-12 h-14"
+                    >
+                        Try Again
+                    </Button>
+                </div>
+            </div>
+        )
     }
 
     return (
-        <div className="min-h-screen bg-background">
-            {/* Header */}
-            <div className="border-b border-border/40 bg-card/30 backdrop-blur-sm sticky top-0 z-10">
-                <div className="container mx-auto px-6 py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => router.back()}
-                                className="gap-2"
-                            >
-                                <ArrowLeft className="h-4 w-4" />
-                                Back
-                            </Button>
-                            <div className="h-6 w-px bg-border/40" />
-                            <div>
-                                <h1 className="text-lg font-semibold">{question.title}</h1>
-                                <p className="text-xs text-muted-foreground">Summarize Group Discussion</p>
-                            </div>
-                        </div>
-                        <div className={`px-3 py-1 rounded-full text-xs font-medium ${question.difficulty === 'Easy' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                                question.difficulty === 'Medium' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                                    'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                            }`}>
-                            {question.difficulty}
-                        </div>
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            {/* Header / Info Bar */}
+            <div className="flex items-center justify-between p-6 bg-card/30 backdrop-blur-sm border border-border/40 rounded-[32px]">
+                <div className="flex items-center gap-6">
+                    <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Type</span>
+                        <span className="text-sm font-black flex items-center gap-1.5 text-primary">
+                            Group Discussion
+                        </span>
+                    </div>
+                    <div className="w-px h-8 bg-border/50" />
+                    <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Limit</span>
+                        <span className="text-sm font-black flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-primary" />
+                            2:00
+                        </span>
                     </div>
                 </div>
+
+                <Badge variant="outline" className="rounded-full px-4 py-1 font-black text-[10px] uppercase tracking-widest bg-primary/5 text-primary border-primary/20">
+                    {question.difficulty || 'Medium'}
+                </Badge>
             </div>
 
-            <div className="container mx-auto px-6 py-8 max-w-4xl">
-                {/* Hidden audio element */}
-                {question.promptMediaUrl && (
-                    <audio
-                        ref={audioRef}
-                        src={question.promptMediaUrl}
-                        onEnded={handleAudioEnded}
-                        className="hidden"
-                    />
-                )}
-
+            {/* Task Area */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6">
-                    {/* Instructions */}
-                    <Card className="border-border/40 bg-card/50">
-                        <CardContent className="pt-6">
-                            <div className="space-y-3">
-                                <div className="flex items-start gap-3">
-                                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                        <span className="text-xs font-semibold text-primary">1</span>
+                    <div className="flex items-center gap-2 text-primary font-black uppercase tracking-[0.2em] text-[10px] mb-2">
+                        <Sparkles className="size-4" />
+                        <span>Summarize the conversation</span>
+                    </div>
+
+                    <Card className="border-border/40 rounded-[48px] bg-white dark:bg-[#121214] overflow-hidden shadow-xl shadow-black/5">
+                        <CardContent className="p-8 md:p-12 space-y-8">
+                            <div className="size-20 rounded-3xl bg-primary/5 flex items-center justify-center">
+                                <Users className="size-10 text-primary" />
+                            </div>
+                            <div className="space-y-4">
+                                <h3 className="text-2xl font-black tracking-tight">{question.title}</h3>
+                                {question.promptText && (
+                                    <div className="p-6 bg-muted/30 rounded-3xl border border-border/40">
+                                        <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest mb-2">Discussion Topic</p>
+                                        <p className="text-foreground/80 leading-relaxed font-medium">
+                                            {question.promptText}
+                                        </p>
                                     </div>
-                                    <div>
-                                        <p className="text-sm font-medium">Listen to the group discussion</p>
-                                        <p className="text-xs text-muted-foreground">Pay attention to key points and arguments</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                        <span className="text-xs font-semibold text-primary">2</span>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-medium">Summarize the discussion</p>
-                                        <p className="text-xs text-muted-foreground">Recording starts automatically (max 2 minutes)</p>
-                                    </div>
-                                </div>
+                                )}
                             </div>
                         </CardContent>
                     </Card>
+                </div>
 
-                    {/* Discussion Topic */}
-                    {question.promptText && (
-                        <Card className="border-border/40 bg-card/50">
-                            <CardContent className="pt-6">
-                                <div className="space-y-3">
-                                    <h3 className="font-semibold">Discussion Topic</h3>
-                                    <div className="p-4 rounded-lg bg-muted/30 border border-border/40">
-                                        <p className="text-sm leading-relaxed">{question.promptText}</p>
-                                    </div>
-                                </div>
-                            </CardContent>
-                        </Card>
-                    )}
+                <Card className="border-border/40 rounded-[48px] bg-card/30 backdrop-blur-sm overflow-hidden border-none shadow-none lg:mt-11">
+                    <CardContent className="p-8 md:p-12">
+                        {question.promptMediaUrl && (
+                            <audio ref={audioRef} src={question.promptMediaUrl} onEnded={handleAudioEnded} className="hidden" />
+                        )}
 
-                    {/* Discussion Player */}
-                    {question.promptMediaUrl && (
-                        <Card className="border-border/40 bg-card/50">
-                            <CardContent className="pt-6">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-3">
-                                        <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                                            <Volume2 className="h-6 w-6 text-primary" />
-                                        </div>
-                                        <div>
-                                            <p className="font-medium">Group Discussion Audio</p>
-                                            <p className="text-xs text-muted-foreground">
-                                                {stage === 'idle' ? 'Ready to play' : stage === 'playing' ? 'Playing...' : 'Completed'}
-                                            </p>
-                                        </div>
+                        <div className="relative">
+                            {stage === 'idle' && (
+                                <div
+                                    key="idle"
+                                    className="space-y-8 text-center animate-in fade-in zoom-in-95 duration-500"
+                                >
+                                    <div className="size-24 rounded-[32px] bg-primary/10 flex items-center justify-center mx-auto">
+                                        <Volume2 className="size-12 text-primary" />
                                     </div>
-                                    <Button
-                                        onClick={handlePlayDiscussion}
-                                        disabled={stage !== 'idle'}
-                                        size="lg"
-                                    >
-                                        <Play className="mr-2 h-5 w-5" />
-                                        Play Discussion
+                                    <div className="space-y-2">
+                                        <h3 className="text-3xl font-black tracking-tight">Ready to Listen?</h3>
+                                        <p className="text-muted-foreground font-medium max-w-sm mx-auto">Hear the group discussion and provide a summary of the main points.</p>
+                                    </div>
+                                    <div className="max-w-xs mx-auto">
+                                        <MicSelector value={selectedDeviceId} onValueChange={setSelectedDeviceId} />
+                                    </div>
+                                    <Button onClick={handlePlayDiscussion} size="lg" className="rounded-2xl font-black h-16 px-12 shadow-xl shadow-primary/20 text-lg">
+                                        Start Discussion
                                     </Button>
                                 </div>
-                            </CardContent>
-                        </Card>
-                    )}
-
-                    {/* Practice Area */}
-                    <Card className="border-border/40 bg-card/50">
-                        <CardContent className="pt-6">
-                            
-                                {stage === 'idle' && !question.promptMediaUrl && (
-                                    <motion.div
-                                        key="idle-no-audio"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        
-                                        className="text-center py-8"
-                                    >
-                                        <Button onClick={handlePlayDiscussion} size="lg">
-                                            <Mic className="mr-2 h-5 w-5" />
-                                            Start Recording
-                                        </Button>
-                                    </motion.div>
-                                )}
-
-                                {stage === 'idle' && question.promptMediaUrl && (
-                                    <motion.div
-                                        key="idle"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        
-                                        className="text-center py-8"
-                                    >
-                                        <p className="text-sm text-muted-foreground">Click &quot;Play Discussion&quot; to begin</p>
-                                    </motion.div>
-                                )}
-
-                                {stage === 'playing' && (
-                                    <motion.div
-                                        key="playing"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        
-                                        className="text-center py-12 space-y-4"
-                                    >
-                                        <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-                                        <div>
-                                            <h3 className="font-semibold mb-1">Listen carefully</h3>
-                                            <p className="text-sm text-muted-foreground">Recording starts right after</p>
-                                        </div>
-                                    </motion.div>
-                                )}
-
-                                {stage === 'recording' && (
-                                    <motion.div
-                                        key="recording"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        
-                                        className="py-8 space-y-6"
-                                    >
-                                        <div className="flex items-center justify-center gap-3">
-                                            <div className="w-4 h-4 bg-rose-500 rounded-full animate-pulse" />
-                                            <span className="text-sm font-medium">Recording</span>
-                                        </div>
-                                        <div className="text-center">
-                                            <div className="text-4xl font-mono font-bold mb-2">
-                                                {formatTime(recordingTime)}
-                                            </div>
-                                            <Progress value={(recordingTime / 120000) * 100} className="h-2 max-w-xs mx-auto" />
-                                        </div>
-                                        <div className="flex justify-center">
-                                            <Button
-                                                onClick={handleStopRecording}
-                                                variant="outline"
-                                                size="lg"
-                                                className="border-rose-500/20 hover:bg-rose-500/10"
-                                            >
-                                                <Square className="mr-2 h-5 w-5" />
-                                                Stop Recording
-                                            </Button>
-                                        </div>
-                                    </motion.div>
-                                )}
-
-                                {stage === 'processing' && (
-                                    <motion.div
-                                        key="processing"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        
-                                        className="text-center py-12 space-y-4"
-                                    >
-                                        <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-                                        <div>
-                                            <h3 className="font-semibold mb-1">Analyzing your summary</h3>
-                                            <p className="text-sm text-muted-foreground">This will take a few seconds...</p>
-                                        </div>
-                                    </motion.div>
-                                )}
-
-                                {stage === 'complete' && score && (
-                                    <motion.div
-                                        key="complete"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className="text-center py-8 space-y-6"
-                                    >
-                                        <div>
-                                            <div className="text-6xl font-bold bg-gradient-to-br from-primary via-primary/80 to-primary/60 bg-clip-text text-transparent mb-2">
-                                                {score.overall_score}
-                                            </div>
-                                            <p className="text-sm text-muted-foreground">Overall Score</p>
-                                        </div>
-                                        <div className="flex gap-2 justify-center flex-wrap">
-                                            <Button
-                                                onClick={() => setIsScoreModalOpen(true)}
-                                                variant="outline"
-                                            >
-                                                View Details
-                                            </Button>
-                                            <Button
-                                                onClick={() => {
-                                                    handleBegin()
-                                                    setScore(null)
-                                                    setTranscript('')
-                                                }}
-                                            >
-                                                Try Again
-                                            </Button>
-                                        </div>
-                                        {audioUrl && (
-                                            <div className="pt-4">
-                                                <audio src={audioUrl} controls className="w-full max-w-md mx-auto" />
-                                            </div>
-                                        )}
-                                    </motion.div>
-                                )}
-                            
-
-                            {/* Error display */}
-                            {(error || recorderError) && (
-                                <Alert variant="destructive" className="mt-4">
-                                    <AlertCircle className="h-4 w-4" />
-                                    <AlertDescription>{error || recorderError}</AlertDescription>
-                                </Alert>
                             )}
-                        </CardContent>
-                    </Card>
-                </div>
+
+                            {stage === 'playing' && (
+                                <div
+                                    key="playing"
+                                    className="space-y-8 text-center animate-in fade-in duration-500"
+                                >
+                                    <div className="flex justify-center gap-3">
+                                        {[1, 2, 3, 4, 5].map(i => (
+                                            <div
+                                                key={i}
+                                                className="w-2 bg-primary rounded-full animate-bounce h-12"
+                                                style={{ animationDelay: `${i * 0.15}s`, animationDuration: '0.7s' }}
+                                            />
+                                        ))}
+                                    </div>
+                                    <p className="text-xl font-black text-primary animate-pulse uppercase tracking-widest">Listening to Group...</p>
+                                </div>
+                            )}
+
+                            {stage === 'recording' && (
+                                <div
+                                    key="recording"
+                                    className="w-full space-y-10 animate-in fade-in duration-500"
+                                >
+                                    <div className="h-32 flex items-center justify-center">
+                                        <LiveWaveform
+                                            isActive={true}
+                                            audioLevel={audioLevel}
+                                            className="w-full h-full text-primary"
+                                        />
+                                    </div>
+                                    <div className="text-center space-y-2">
+                                        <div className="flex items-center justify-center gap-2 text-rose-500">
+                                            <div className="size-2 rounded-full bg-rose-500 animate-pulse" />
+                                            <span className="text-sm font-black uppercase tracking-widest">Recording Summary</span>
+                                        </div>
+                                        <span className="text-6xl font-black tabular-nums">{formatLongTime(recordingTime)}</span>
+                                        <Progress value={(recordingTime / 120000) * 100} className="h-2 max-w-xs mx-auto mt-4" />
+                                    </div>
+                                    <div className="flex justify-center">
+                                        <Button
+                                            variant="destructive"
+                                            size="lg"
+                                            onClick={handleStopRecording}
+                                            className="rounded-full size-24 shadow-2xl shadow-rose-500/30"
+                                        >
+                                            <Square className="size-10 fill-current" />
+                                        </Button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {(stage === 'processing' || stage === 'complete') && (
+                                <div
+                                    key="processing"
+                                    className="w-full space-y-8 animate-in fade-in duration-500"
+                                >
+                                    {stage === 'processing' ? (
+                                        <div className="space-y-4 text-center">
+                                            <Loader2 className="size-12 text-primary animate-spin mx-auto" />
+                                            <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">Evaluating Summary</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-8 max-w-md mx-auto">
+                                            <div className="p-8 bg-muted/50 rounded-[40px] border border-border/40">
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-4">Your Response</p>
+                                                <p className="text-lg font-bold italic text-foreground/80 leading-relaxed">&ldquo;{transcript}&rdquo;</p>
+                                            </div>
+
+                                            <div className="p-4 bg-background rounded-3xl border border-border/40">
+                                                <audio src={audioUrl!} controls className="w-full" />
+                                            </div>
+
+                                            <div className="flex gap-4">
+                                                <Button variant="outline" onClick={handleBegin} className="flex-1 rounded-2xl font-black h-14">
+                                                    <RotateCcw className="mr-2 size-4" />
+                                                    Retry
+                                                </Button>
+                                                <Button
+                                                    onClick={handleSubmit}
+                                                    disabled={isSubmitting}
+                                                    className="flex-1 rounded-2xl font-black h-14 shadow-xl shadow-primary/20"
+                                                >
+                                                    {isSubmitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <CheckCircle className="mr-2 size-4" />}
+                                                    Submit
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
-            {/* Score Details Modal */}
-            {score && (
-                <ScoreDetailsModal
-                    open={isScoreModalOpen}
-                    onOpenChange={setIsScoreModalOpen}
-                    score={score}
-                    transcript={transcript}
-                    originalText={question.promptText || 'Discussion topic'}
-                />
+            {recorderError && (
+                <Alert variant="destructive" className="rounded-[32px] bg-rose-500/5 border-rose-500/20">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="font-bold">{recorderError}</AlertDescription>
+                </Alert>
             )}
         </div>
     )

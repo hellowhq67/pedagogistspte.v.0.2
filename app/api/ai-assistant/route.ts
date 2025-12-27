@@ -1,7 +1,7 @@
-import { google } from '@ai-sdk/google';
+import { createGoogle } from '@ai-sdk/google';
 import { streamText } from 'ai';
 import { NextRequest } from 'next/server';
-import { z } from 'zod/v3';
+import { z } from 'zod';
 
 // Allow streaming responses up to 30 seconds
 export const maxDuration = 30;
@@ -16,15 +16,17 @@ const requestBodySchema = z.object({
   ),
 });
 
+const google = createGoogle({
+  apiKey: process.env.GEMINI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY,
+});
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const { messages } = requestBodySchema.parse(body);
 
     const result = streamText({
-      model: google('gemini-1.5-pro', {
-        apiKey: process.env.GEMINI_API_KEY, // Use the key from environment variables
-      }),
+      model: google('gemini-1.5-pro'),
       system: `You are an AI tutor for PTE (Pearson Test of English) preparation.
       Provide helpful, educational responses to help students improve their English language skills.
       Be encouraging, clear, and focus on PTE-specific content.

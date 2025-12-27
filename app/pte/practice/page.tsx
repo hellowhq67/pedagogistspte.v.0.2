@@ -1,205 +1,120 @@
-'use client'
-
-import React from 'react'
+import { db } from '@/lib/db/drizzle'
+import { pteCategories } from '@/lib/db/schema'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { ChevronRight, Sparkles, Mic, PenTool, BookOpen, Headphones, Zap, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
-import { motion } from 'framer-motion'
-import {
-    Mic,
-    PenTool,
-    BookOpen,
-    Headphones,
-    ArrowRight,
-    Sparkles,
-    Trophy,
-    History,
-    ChevronRight,
-    ClipboardList
-} from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-const categories = [
-    {
-        id: 'speaking',
-        name: 'Speaking',
-        description: 'Fluency, Pronunciation & Oral Skills',
-        icon: Mic,
-        color: 'from-blue-600 to-blue-400',
-        cardBg: 'bg-blue-50/50 dark:bg-blue-500/5',
-        href: '/pte/practice/speaking',
-        count: 7,
-    },
-    {
-        id: 'writing',
-        name: 'Writing',
-        description: 'Grammar, Structure & Vocabulary',
-        icon: PenTool,
-        color: 'from-purple-600 to-purple-400',
-        cardBg: 'bg-purple-50/50 dark:bg-purple-500/5',
-        href: '/pte/practice/writing',
-        count: 2,
-    },
-    {
-        id: 'reading',
-        name: 'Reading',
-        description: 'Comprehension & Speed Reading',
-        icon: BookOpen,
-        color: 'from-emerald-600 to-emerald-400',
-        cardBg: 'bg-emerald-50/50 dark:bg-emerald-500/5',
-        href: '/pte/practice/reading',
-        count: 5,
-    },
-    {
-        id: 'listening',
-        name: 'Listening',
-        description: 'Lecture Understanding & Accents',
-        icon: Headphones,
-        color: 'from-orange-600 to-orange-400',
-        cardBg: 'bg-orange-50/50 dark:bg-orange-500/5',
-        href: '/pte/practice/listening',
-        count: 8,
-    },
-]
+const iconMap = {
+    'speaking': Mic,
+    'writing': PenTool,
+    'reading': BookOpen,
+    'listening': Headphones,
+}
 
-export default function PtePracticePage() {
-    return (
-        <div className="max-w-6xl mx-auto space-y-10">
-            {/* Welcome Banner */}
-            <div className="flex flex-col md:flex-row justify-between items-end gap-6">
-                <div>
-                    <h1 className="text-4xl font-black text-gray-900 dark:text-white tracking-tight">Practice Center</h1>
-                    <p className="text-gray-500 dark:text-gray-400 mt-2 font-medium">Select a category to sharpen your skills with AI-powered feedback.</p>
+export default async function PracticePage() {
+  const categories = await db.query.pteCategories.findMany({
+    orderBy: (c, { asc }) => [asc(c.id)],
+    with: {
+        questionTypes: {
+            where: (qt, { eq }) => eq(qt.isActive, true)
+        }
+    }
+  })
+
+  return (
+    <div className="max-w-7xl mx-auto space-y-16 py-16 px-6">
+      {/* Hero Header */}
+      <div className="text-center space-y-6 max-w-3xl mx-auto">
+        <Badge variant="outline" className="rounded-full px-6 py-2 border-primary/20 bg-primary/5 text-primary font-black uppercase tracking-[0.3em] text-[10px]">
+            AI-Powered Learning
+        </Badge>
+        <h1 className="text-6xl font-black tracking-tight leading-tight">
+            Master the <span className="text-primary underline decoration-primary/20 underline-offset-8">PTE Exam</span>
+        </h1>
+        <p className="text-xl text-muted-foreground font-medium leading-relaxed">
+            Choose a section to begin your journey. Every task is powered by our advanced AI scoring system to give you instant, accurate feedback.
+        </p>
+      </div>
+
+      {/* Categories Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {categories.map((category) => {
+          const Icon = iconMap[category.code as keyof typeof iconMap] || Sparkles
+          
+          return (
+            <Link 
+              key={category.id} 
+              href={`/pte/practice/${category.code}`}
+              className="group"
+            >
+              <Card className="h-full border-border/40 bg-card/30 backdrop-blur-xl hover:bg-card hover:shadow-[0_32px_64px_-12px_rgba(0,0,0,0.1)] transition-all duration-700 rounded-[56px] overflow-hidden group-hover:-translate-y-3 relative">
+                <div className="absolute top-0 right-0 p-12 opacity-[0.02] group-hover:scale-125 transition-transform duration-1000">
+                    <Icon className="size-64" />
                 </div>
-                <div className="flex items-center gap-2 p-1 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-2xl">
-                    <button className="px-6 py-2 bg-blue-600 text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-600/20">Academic</button>
-                    <button className="px-6 py-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs font-bold uppercase tracking-widest">Core (General)</button>
-                </div>
-            </div>
-
-            {/* Category Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                {categories.map((category, index) => (
-                    <motion.div
-                        key={category.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: 0.1 * index }}
-                        whileHover={{ y: -4 }}
-                        className="group"
-                    >
-                        <Link href={category.href} className="block h-full">
-                            <div className={cn(
-                                "h-full p-8 rounded-[40px] border border-gray-100 dark:border-white/5 transition-all duration-500 group-hover:shadow-2xl group-hover:shadow-blue-500/5 relative overflow-hidden flex flex-col",
-                                category.cardBg || "bg-white dark:bg-[#121214]"
-                            )}>
-                                <div className={cn(
-                                    "size-14 rounded-2xl bg-gradient-to-br flex items-center justify-center mb-6 shadow-lg shadow-black/10 group-hover:scale-110 transition-transform duration-500",
-                                    category.color
-                                )}>
-                                    <category.icon className="size-7 text-white" />
-                                </div>
-
-                                <h3 className="text-2xl font-black text-gray-900 dark:text-white mb-2 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{category.name}</h3>
-                                <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-4">{category.count} Question Types</p>
-                                <p className="text-gray-500 dark:text-gray-400 text-sm font-medium leading-relaxed mb-8">{category.description}</p>
-
-                                <div className="mt-auto flex items-center justify-between">
-                                    <div className="flex -space-x-2">
-                                        {[1, 2, 3].map(i => (
-                                            <div key={i} className="size-6 rounded-full border-2 border-white dark:border-[#121214] bg-gray-200 dark:bg-white/10 flex items-center justify-center text-[8px] font-bold text-gray-500">JD</div>
-                                        ))}
-                                        <div className="size-6 rounded-full border-2 border-white dark:border-[#121214] bg-blue-600 flex items-center justify-center text-[8px] font-bold text-white">+12</div>
-                                    </div>
-                                    <div className="size-10 rounded-full bg-white dark:bg-white/5 border border-gray-100 dark:border-white/10 flex items-center justify-center text-gray-400 group-hover:bg-blue-600 group-hover:text-white group-hover:translate-x-1 transition-all">
-                                        <ChevronRight className="size-5" />
-                                    </div>
-                                </div>
-
-                                {/* Decorative glow */}
-                                <div className={cn(
-                                    "absolute -inset-1 bg-gradient-to-br opacity-0 group-hover:opacity-10 transition-opacity blur-2xl -z-10",
-                                    category.color
-                                )} />
-                            </div>
-                        </Link>
-                    </motion.div>
-                ))}
-            </div>
-
-            {/* Secondary Section - Mock Tests & Recent */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                {/* Promo Card */}
-                <div className="lg:col-span-2 relative overflow-hidden rounded-[40px] bg-gradient-to-br from-[#1e293b] to-[#0f172a] p-10 md:p-12 text-white border border-white/10 shadow-2xl">
-                    <div className="absolute top-0 right-0 w-[400px] h-[400px] bg-blue-500/10 blur-[120px] -mr-40 -mt-40 pointer-events-none" />
-                    <div className="absolute bottom-0 left-0 w-[300px] h-[300px] bg-purple-500/10 blur-[100px] -ml-20 -mb-20 pointer-events-none" />
-
-                    <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-10">
-                        <div className="max-w-md space-y-6">
-                            <div className="flex items-center gap-2 text-blue-400 font-black uppercase tracking-[0.2em] text-xs">
-                                <Sparkles className="size-4" />
-                                <span>Official Test Engine</span>
-                            </div>
-                            <h2 className="text-3xl font-black tracking-tight leading-tight md:text-4xl">Full-length Mock Test Simulation</h2>
-                            <p className="text-gray-400 font-medium text-lg leading-relaxed">Simulate the real PTE exam environment and get a predictive score report with AI analysis.</p>
-                            <Link
-                                href="/pte/mock-tests"
-                                className="inline-flex items-center gap-3 bg-blue-600 hover:bg-blue-700 text-white font-black py-4 px-10 rounded-[20px] transition-all shadow-xl shadow-blue-600/30 hover:scale-105 active:scale-95 group"
-                            >
-                                Start Simulation
-                                <ArrowRight className="size-5 group-hover:translate-x-1 transition-transform" />
-                            </Link>
-                        </div>
-                        <div className="relative hidden md:block">
-                            <div className="size-56 bg-gradient-to-tr from-blue-600 to-indigo-700 rounded-[48px] rotate-12 flex items-center justify-center border border-white/20 shadow-[0_0_80px_rgba(37,99,235,0.3)] group-hover:rotate-6 transition-transform duration-700">
-                                <ClipboardList className="size-24 text-white opacity-90" />
-                            </div>
-                            <div className="absolute -bottom-6 -left-6 size-24 bg-white/5 backdrop-blur-xl rounded-3xl border border-white/10 flex items-center justify-center -rotate-12 shadow-2xl">
-                                <Trophy className="size-10 text-yellow-400" />
-                            </div>
-                        </div>
+                
+                <CardContent className="p-12 flex flex-col h-full relative z-10">
+                  <div className="flex items-start justify-between mb-12">
+                    <div className="size-20 rounded-[28px] bg-primary flex items-center justify-center text-white shadow-2xl shadow-primary/40 group-hover:scale-110 transition-transform duration-500">
+                      <Icon className="size-10" />
                     </div>
-                </div>
-
-                {/* Recent Activity / Stats Sidebar */}
-                <div className="bg-white dark:bg-[#121214] border border-gray-100 dark:border-white/10 rounded-[40px] p-8 space-y-8">
-                    <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-xl font-black text-gray-900 dark:text-white">Recent Results</h3>
-                        <Link href="/pte/academic/practice-attempts" className="text-xs font-bold text-blue-600 hover:text-blue-700 uppercase tracking-widest">View All</Link>
+                    <div className="text-right">
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest block mb-1">Available Tasks</span>
+                        <span className="text-3xl font-black text-primary">{category.questionTypes?.length || 0}</span>
                     </div>
+                  </div>
 
-                    <div className="space-y-4">
-                        {[
-                            { type: 'Read Aloud', score: 82, date: 'Today', color: 'text-blue-500' },
-                            { type: 'Essay', score: 74, date: 'Yesterday', color: 'text-purple-500' },
-                            { type: 'Summarize Text', score: 68, date: '2 days ago', color: 'text-orange-500' }
-                        ].map((item, i) => (
-                            <div key={i} className="flex items-center justify-between p-4 rounded-2xl bg-gray-50/50 dark:bg-white/[0.02] border border-gray-100 dark:border-white/5 hover:border-blue-500/30 transition-all cursor-pointer group">
-                                <div className="flex items-center gap-4">
-                                    <div className="size-10 rounded-xl bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                                        <History className="size-4 text-gray-400" />
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-black text-gray-900 dark:text-white">{item.type}</p>
-                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{item.date}</p>
-                                    </div>
-                                </div>
-                                <div className={cn("text-lg font-black", item.color)}>
-                                    {item.score}
-                                </div>
+                  <div className="space-y-4 flex-1">
+                    <h3 className="text-3xl font-black group-hover:text-primary transition-colors">{category.title}</h3>
+                    <p className="text-muted-foreground text-lg font-medium leading-relaxed opacity-70">
+                      {category.description || `Comprehensive practice for all ${category.title} task types.`}
+                    </p>
+                  </div>
+
+                  <div className="mt-12 flex items-center justify-between">
+                    <div className="flex -space-x-2">
+                        {[1, 2, 3].map((i) => (
+                            <div key={i} className="size-8 rounded-full bg-muted border-2 border-background flex items-center justify-center">
+                                <Zap className="size-3.5 text-primary opacity-40" />
                             </div>
                         ))}
+                        <div className="px-4 flex items-center text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-4">
+                            Instant Scoring
+                        </div>
                     </div>
+                    <div className="flex items-center gap-4 group/btn">
+                        <span className="text-xs font-black uppercase tracking-widest text-primary opacity-0 group-hover:opacity-100 transition-all -translate-x-4 group-hover:translate-x-0">
+                            Explore Section
+                        </span>
+                        <div className="size-14 rounded-full bg-primary text-white flex items-center justify-center shadow-lg shadow-primary/20 group-hover:rotate-[-45deg] transition-all duration-500">
+                            <ArrowRight className="size-6" />
+                        </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          )
+        })}
+      </div>
 
-                    <div className="pt-6 border-t border-gray-100 dark:border-white/5">
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Target Score</span>
-                            <span className="text-xs font-black text-gray-900 dark:text-white">79 / 90</span>
-                        </div>
-                        <div className="h-2 bg-gray-100 dark:bg-white/5 rounded-full overflow-hidden">
-                            <div className="h-full bg-gradient-to-r from-blue-600 to-indigo-600 w-[85%] rounded-full" />
-                        </div>
-                    </div>
-                </div>
+      {/* Stats / Motivation Bar */}
+      <div className="rounded-[40px] bg-muted/30 p-10 flex flex-col md:flex-row items-center justify-between gap-8 border border-border/40">
+        <div className="flex items-center gap-6">
+            <div className="size-16 rounded-full bg-emerald-500/10 flex items-center justify-center">
+                <Sparkles className="size-8 text-emerald-600" />
+            </div>
+            <div>
+                <h4 className="text-xl font-black">AI Scoring is Active</h4>
+                <p className="text-sm text-muted-foreground font-medium">Our models are trained on thousands of official PTE responses.</p>
             </div>
         </div>
-    )
+        <Button size="lg" className="rounded-2xl h-14 px-10 font-black text-xs uppercase tracking-[0.2em] shadow-xl shadow-primary/20">
+            View My Progress
+        </Button>
+      </div>
+    </div>
+  )
 }

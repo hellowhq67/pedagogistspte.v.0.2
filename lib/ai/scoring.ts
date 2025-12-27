@@ -4,25 +4,7 @@ import { getPromptForQuestionType } from './prompts'
 import { QuestionType, AIFeedbackData, SpeakingFeedbackData } from '@/lib/types'
 import { z } from 'zod'
 
-// Define the Zod schema for the feedback data based on the type definition
-const AIFeedbackDataSchema = z.object({
-  overallScore: z.number(),
-  pronunciation: z
-    .object({ score: z.number(), feedback: z.string() })
-    .optional(),
-  fluency: z.object({ score: z.number(), feedback: z.string() }).optional(),
-  grammar: z.object({ score: z.number(), feedback: z.string() }).optional(),
-  vocabulary: z.object({ score: z.number(), feedback: z.string() }).optional(),
-  content: z.object({ score: z.number(), feedback: z.string() }).optional(),
-  spelling: z.object({ score: z.number(), feedback: z.string() }).optional(),
-  structure: z.object({ score: z.number(), feedback: z.string() }).optional(),
-  accuracy: z.object({ score: z.number(), feedback: z.string() }).optional(),
-  suggestions: z.array(z.string()),
-  strengths: z.array(z.string()),
-  areasForImprovement: z.array(z.string()),
-}) satisfies z.ZodType<AIFeedbackData>
-
-const SpeakingFeedbackDataSchema = AIFeedbackDataSchema satisfies z.ZodType<SpeakingFeedbackData>
+import { AIFeedbackDataSchema, SpeakingFeedbackDataSchema } from './schemas'
 
 /**
  * Scores a user's response for a given PTE question type using an AI model.

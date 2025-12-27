@@ -8,3 +8,4 @@ export * from './ai-scoring';
 export * from './pte-categories';
 export * from './pte-questions';
 export * from './pte-attempts';
+export * from './billing';

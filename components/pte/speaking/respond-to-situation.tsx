@@ -1,16 +1,21 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Mic, Square, AlertCircle, ArrowLeft, Clock } from 'lucide-react'
+import { Mic, Square, AlertCircle, ArrowLeft, Clock, Sparkles, Loader2, RotateCcw, CheckCircle } from 'lucide-react'
 import { useAudioRecorder } from '../hooks/use-audio-recorder'
-import { submitAttempt } from '@/lib/actions/pte'
-import { ScoreDetailsModal } from './score-details-modal'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Progress } from '@/components/ui/progress'
-import { motion } from 'framer-motion'
+import { scoreSpeakingAttempt } from '@/app/actions/pte'
+import { QuestionType } from '@/lib/types'
 import { useRouter } from 'next/navigation'
+import { LiveWaveform } from '@/components/ui/live-waveform'
+import { MicSelector } from '@/components/ui/mic-selector'
+import { toast } from 'sonner'
+import { Badge } from '@/components/ui/badge'
+import { cn } from '@/lib/utils'
+import SpeakingResults from '@/app/practice/_componets/SpeakingResults'
 
 interface RespondToSituationProps {
     question: {
@@ -27,16 +32,17 @@ export function RespondToSituation({ question }: RespondToSituationProps) {
     const [stage, setStage] = useState<'idle' | 'reading' | 'recording' | 'processing' | 'complete'>('idle')
     const [transcript, setTranscript] = useState('')
     const [score, setScore] = useState<any>(null)
-    const [isScoreModalOpen, setIsScoreModalOpen] = useState(false)
     const [error, setError] = useState<string | null>(null)
     const [audioUrl, setAudioUrl] = useState<string | null>(null)
-    const [readingTime, setReadingTime] = useState(0)
-    const readingTimerRef = useRef<NodeJS.Timeout | null>(null)
+    const [readingTime, setReadingTime] = useState(40)
+    const [selectedDeviceId, setSelectedDeviceId] = useState<string>('')
+    const [isSubmitting, setIsSubmitting] = useState(false)
 
     const {
         isRecording,
         recordingTime,
         audioBlob,
+        audioLevel,
         error: recorderError,
         startRecording,
         stopRecording,
@@ -49,309 +55,281 @@ export function RespondToSituation({ question }: RespondToSituationProps) {
 
     const handleBegin = () => {
         setStage('reading')
-        setReadingTime(0)
-
-        // Start 40-second reading timer
-        readingTimerRef.current = setInterval(() => {
-            setReadingTime((prev) => {
-                if (prev >= 40000) {
-                    if (readingTimerRef.current) {
-                        clearInterval(readingTimerRef.current)
-                    }
-                    return 40000
-                }
-                return prev + 100
-            })
-        }, 100)
+        setReadingTime(40)
+        setError(null)
+        setScore(null)
+        resetRecording()
     }
 
-    const handleStartRecording = async () => {
-        if (readingTimerRef.current) {
-            clearInterval(readingTimerRef.current)
-        }
+    const handleStartRecording = useCallback(async () => {
         playBeep()
         setStage('recording')
-        await startRecording()
-    }
+        await startRecording(selectedDeviceId)
+    }, [startRecording, playBeep, selectedDeviceId])
 
-    const handleStopRecording = () => {
+    useEffect(() => {
+        let timer: NodeJS.Timeout
+        if (stage === 'reading' && readingTime > 0) {
+            timer = setTimeout(() => setReadingTime(readingTime - 1), 1000)
+        } else if (stage === 'reading' && readingTime === 0) {
+            handleStartRecording()
+        }
+        return () => clearTimeout(timer)
+    }, [stage, readingTime, handleStartRecording])
+
+    const handleStopRecording = useCallback(() => {
         playBeep(660, 200)
         stopRecording()
-    }
+    }, [stopRecording, playBeep])
 
     async function handleRecordingComplete(blob: Blob, duration: number) {
         setStage('processing')
-
         try {
-            const audioFile = new File([blob], 'recording.webm', { type: 'audio/webm' })
             const url = URL.createObjectURL(blob)
             setAudioUrl(url)
 
-            const transcribedText = await transcribeAudio(blob)
-            setTranscript(transcribedText)
-
-            const result = await submitAttempt({
-                questionId: question.id,
-                questionType: 'respond_to_a_situation',
-                audioUrl: url,
-                transcript: transcribedText,
-                durationMs: duration,
-            })
-
-            setScore(result.score)
-            setStage('complete')
-            setIsScoreModalOpen(true)
+            // Mock transcription
+            setTimeout(() => {
+                setTranscript("I would explain the situation clearly and offer an alternative solution.")
+                setStage('complete')
+            }, 1500)
         } catch (err: any) {
             setError(err.message || 'Failed to process recording')
             setStage('idle')
         }
     }
 
-    async function transcribeAudio(blob: Blob): Promise<string> {
-        return new Promise((resolve) => {
-            setTimeout(() => {
-                resolve('Sample response to the situation')
-            }, 1000)
-        })
+    const handleSubmit = async () => {
+        if (!audioBlob || !question.id) return
+        setIsSubmitting(true)
+        try {
+            const file = new File([audioBlob], 'recording.webm', { type: 'audio/webm' })
+
+            const result = await scoreSpeakingAttempt(
+                QuestionType.RESPOND_TO_A_SITUATION,
+                file,
+                question.promptText || question.title,
+                question.id
+            )
+
+            if (result.success && result.feedback) {
+                setScore(result.feedback)
+                toast.success('Response scored successfully!')
+            } else {
+                setError(result.error || 'Failed to score response')
+                toast.error(result.error || 'Submission failed.')
+            }
+        } catch (err: any) {
+            setError(err.message || 'Failed to submit attempt')
+            toast.error('Submission failed.')
+        } finally {
+            setIsSubmitting(false)
+        }
     }
 
-    const formatTime = (ms: number) => {
-        const seconds = Math.floor(ms / 1000)
-        return `${seconds}s`
+    if (score) {
+        return (
+            <div className="space-y-8">
+                <SpeakingResults scoreData={score} />
+                <div className="flex justify-center">
+                    <Button
+                        size="lg"
+                        variant="outline"
+                        onClick={handleBegin}
+                        className="rounded-2xl font-black uppercase tracking-widest px-12 h-14"
+                    >
+                        Try Again
+                    </Button>
+                </div>
+            </div>
+        )
     }
 
     return (
-        <div className="min-h-screen bg-background">
-            {/* Header */}
-            <div className="border-b border-border/40 bg-card/30 backdrop-blur-sm sticky top-0 z-10">
-                <div className="container mx-auto px-6 py-4">
-                    <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                            <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => router.back()}
-                                className="gap-2"
-                            >
-                                <ArrowLeft className="h-4 w-4" />
-                                Back
-                            </Button>
-                            <div className="h-6 w-px bg-border/40" />
-                            <div>
-                                <h1 className="text-lg font-semibold">{question.title}</h1>
-                                <p className="text-xs text-muted-foreground">Respond to a Situation</p>
-                            </div>
-                        </div>
-                        <div className={`px-3 py-1 rounded-full text-xs font-medium ${question.difficulty === 'Easy' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                                question.difficulty === 'Medium' ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20' :
-                                    'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                            }`}>
-                            {question.difficulty}
-                        </div>
+        <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            {/* Header / Info Bar */}
+            <div className="flex items-center justify-between p-6 bg-card/30 backdrop-blur-sm border border-border/40 rounded-[32px]">
+                <div className="flex items-center gap-6">
+                    <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Prep</span>
+                        <span className="text-sm font-black flex items-center gap-1.5 text-primary">
+                            <Clock className="w-3.5 h-3.5" />
+                            40s
+                        </span>
+                    </div>
+                    <div className="w-px h-8 bg-border/50" />
+                    <div className="flex flex-col">
+                        <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Target</span>
+                        <span className="text-sm font-black flex items-center gap-1.5">
+                            <Mic className="w-3.5 h-3.5 text-primary" />
+                            40s Limit
+                        </span>
                     </div>
                 </div>
+
+                <Badge variant="outline" className="rounded-full px-4 py-1 font-black text-[10px] uppercase tracking-widest bg-primary/5 text-primary border-primary/20">
+                    {question.difficulty || 'Medium'}
+                </Badge>
             </div>
 
-            <div className="container mx-auto px-6 py-8 max-w-4xl">
+            {/* Content Area */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6">
-                    {/* Instructions */}
-                    <Card className="border-border/40 bg-card/50">
-                        <CardContent className="pt-6">
-                            <div className="space-y-3">
-                                <div className="flex items-start gap-3">
-                                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                        <span className="text-xs font-semibold text-primary">1</span>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-medium">Read the situation carefully</p>
-                                        <p className="text-xs text-muted-foreground">You have up to 40 seconds to read</p>
-                                    </div>
-                                </div>
-                                <div className="flex items-start gap-3">
-                                    <div className="w-6 h-6 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-0.5">
-                                        <span className="text-xs font-semibold text-primary">2</span>
-                                    </div>
-                                    <div>
-                                        <p className="text-sm font-medium">Respond appropriately</p>
-                                        <p className="text-xs text-muted-foreground">Record your response (max 40 seconds)</p>
-                                    </div>
+                    <div className="flex items-center gap-2 text-primary font-black uppercase tracking-[0.2em] text-[10px] mb-2">
+                        <Sparkles className="size-4" />
+                        <span>Respond to this situation</span>
+                    </div>
+
+                    <Card className="border-border/40 rounded-[48px] bg-white dark:bg-[#121214] overflow-hidden shadow-xl shadow-black/5">
+                        <CardContent className="p-8 md:p-12 space-y-8">
+                            <div className="size-20 rounded-3xl bg-primary/5 flex items-center justify-center">
+                                <Clock className="size-10 text-primary" />
+                            </div>
+                            <div className="space-y-4">
+                                <h3 className="text-2xl font-black tracking-tight">{question.title}</h3>
+                                <div className="p-8 bg-muted/30 rounded-[40px] border border-border/40 relative">
+                                    <div className="absolute top-0 left-0 w-2 h-full bg-primary/20 rounded-l-full" />
+                                    <p className="text-lg md:text-xl font-bold text-foreground/80 leading-relaxed italic">
+                                        &ldquo;{question.promptText}&rdquo;
+                                    </p>
                                 </div>
                             </div>
                         </CardContent>
                     </Card>
+                </div>
 
-                    {/* Situation Card */}
-                    <Card className="border-border/40 bg-card/50">
-                        <CardContent className="pt-6">
-                            <div className="space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <h3 className="font-semibold">Situation</h3>
-                                    {stage === 'reading' && (
-                                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                            <Clock className="h-4 w-4" />
-                                            <span>{formatTime(40000 - readingTime)} remaining</span>
+                <Card className="border-border/40 rounded-[48px] bg-card/30 backdrop-blur-sm overflow-hidden border-none shadow-none lg:mt-11">
+                    <CardContent className="p-8 md:p-12">
+                        <div className="relative">
+                            {stage === 'idle' && (
+                                <div
+                                    key="idle"
+                                    className="text-center space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500"
+                                >
+                                    <div className="space-y-2">
+                                        <h3 className="text-3xl font-black tracking-tight">Ready?</h3>
+                                        <p className="text-muted-foreground font-medium">Read the situation carefully and prepare your response.</p>
+                                    </div>
+                                    <div className="max-w-xs mx-auto">
+                                        <MicSelector value={selectedDeviceId} onValueChange={setSelectedDeviceId} />
+                                    </div>
+                                    <Button onClick={handleBegin} size="lg" className="rounded-2xl font-black h-16 px-12 shadow-xl shadow-primary/20 text-lg">
+                                        Start Preparation
+                                    </Button>
+                                </div>
+                            )}
+
+                            {stage === 'reading' && (
+                                <div
+                                    key="reading"
+                                    className="text-center space-y-8 animate-in fade-in duration-500"
+                                >
+                                    <div className="relative size-48 mx-auto flex items-center justify-center">
+                                        <span className="text-8xl font-black text-primary tabular-nums">{readingTime}</span>
+                                        <svg className="absolute inset-0 size-full -rotate-90">
+                                            <circle
+                                                cx="50%"
+                                                cy="50%"
+                                                r="48%"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="4"
+                                                strokeDasharray={`${(readingTime / 40) * 100} 100`}
+                                                pathLength="100"
+                                                className="text-primary transition-all duration-1000"
+                                            />
+                                        </svg>
+                                    </div>
+                                    <div className="space-y-1">
+                                        <p className="text-xs font-black uppercase tracking-widest text-muted-foreground">Reading & Prep</p>
+                                        <p className="font-bold text-foreground/80">Think of a natural response</p>
+                                    </div>
+                                    <Button variant="ghost" onClick={handleStartRecording} className="font-black uppercase tracking-widest text-xs">
+                                        Skip to Recording
+                                    </Button>
+                                </div>
+                            )}
+
+                            {stage === 'recording' && (
+                                <div
+                                    key="recording"
+                                    className="w-full space-y-10 animate-in fade-in duration-500"
+                                >
+                                    <div className="h-32 flex items-center justify-center">
+                                        <LiveWaveform
+                                            isActive={true}
+                                            audioLevel={audioLevel}
+                                            className="w-full h-full text-primary"
+                                        />
+                                    </div>
+                                    <div className="text-center space-y-2">
+                                        <div className="flex items-center justify-center gap-2 text-rose-500">
+                                            <div className="size-2 rounded-full bg-rose-500 animate-pulse" />
+                                            <span className="text-sm font-black uppercase tracking-widest">Recording</span>
+                                        </div>
+                                        <span className="text-6xl font-black tabular-nums">{Math.floor(recordingTime / 1000)}s</span>
+                                        <p className="text-xs font-black text-muted-foreground uppercase tracking-widest">/ 40s Limit</p>
+                                    </div>
+                                    <Button
+                                        variant="destructive"
+                                        size="lg"
+                                        onClick={handleStopRecording}
+                                        className="rounded-full size-24 shadow-2xl shadow-rose-500/30"
+                                    >
+                                        <Square className="size-10 fill-current" />
+                                    </Button>
+                                </div>
+                            )}
+
+                            {(stage === 'processing' || stage === 'complete') && (
+                                <div
+                                    key="processing"
+                                    className="w-full space-y-8 animate-in fade-in duration-500"
+                                >
+                                    {stage === 'processing' ? (
+                                        <div className="space-y-4">
+                                            <Loader2 className="size-12 text-primary animate-spin mx-auto" />
+                                            <p className="text-sm font-black uppercase tracking-widest text-muted-foreground">Evaluating Response</p>
+                                        </div>
+                                    ) : (
+                                        <div className="space-y-8 max-w-md mx-auto">
+                                            <div className="p-8 bg-muted/50 rounded-[40px] border border-border/40">
+                                                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mb-4">Transcription</p>
+                                                <p className="text-xl font-bold italic text-foreground/80">&ldquo;{transcript}&rdquo;</p>
+                                            </div>
+
+                                            <div className="p-4 bg-background rounded-3xl border border-border/40">
+                                                <audio src={audioUrl!} controls className="w-full" />
+                                            </div>
+
+                                            <div className="flex gap-4">
+                                                <Button variant="outline" onClick={handleBegin} className="flex-1 rounded-2xl font-black h-14">
+                                                    <RotateCcw className="mr-2 size-4" />
+                                                    Retry
+                                                </Button>
+                                                <Button
+                                                    onClick={handleSubmit}
+                                                    disabled={isSubmitting}
+                                                    className="flex-1 rounded-2xl font-black h-14 shadow-xl shadow-primary/20"
+                                                >
+                                                    {isSubmitting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <CheckCircle className="mr-2 size-4" />}
+                                                    Submit
+                                                </Button>
+                                            </div>
                                         </div>
                                     )}
                                 </div>
-                                <div className="p-4 rounded-lg bg-muted/30 border border-border/40">
-                                    <p className="text-sm leading-relaxed">{question.promptText}</p>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-
-                    {/* Practice Area */}
-                    <Card className="border-border/40 bg-card/50">
-                        <CardContent className="pt-6">
-                            
-                                {stage === 'idle' && (
-                                    <motion.div
-                                        key="idle"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        
-                                        className="text-center py-8"
-                                    >
-                                        <Button onClick={handleBegin} size="lg">
-                                            <Mic className="mr-2 h-5 w-5" />
-                                            Begin
-                                        </Button>
-                                    </motion.div>
-                                )}
-
-                                {stage === 'reading' && (
-                                    <motion.div
-                                        key="reading"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        
-                                        className="py-8 space-y-6"
-                                    >
-                                        <div className="text-center space-y-4">
-                                            <p className="text-sm text-muted-foreground">Read the situation and prepare your response</p>
-                                            <Progress value={(readingTime / 40000) * 100} className="h-2 max-w-xs mx-auto" />
-                                        </div>
-                                        <div className="flex justify-center">
-                                            <Button
-                                                onClick={handleStartRecording}
-                                                size="lg"
-                                            >
-                                                <Mic className="mr-2 h-5 w-5" />
-                                                Start Recording
-                                            </Button>
-                                        </div>
-                                    </motion.div>
-                                )}
-
-                                {stage === 'recording' && (
-                                    <motion.div
-                                        key="recording"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        
-                                        className="py-8 space-y-6"
-                                    >
-                                        <div className="flex items-center justify-center gap-3">
-                                            <div className="w-4 h-4 bg-rose-500 rounded-full animate-pulse" />
-                                            <span className="text-sm font-medium">Recording</span>
-                                        </div>
-                                        <div className="text-center">
-                                            <div className="text-4xl font-mono font-bold mb-2">
-                                                {formatTime(recordingTime)}
-                                            </div>
-                                            <Progress value={(recordingTime / 40000) * 100} className="h-2 max-w-xs mx-auto" />
-                                        </div>
-                                        <div className="flex justify-center">
-                                            <Button
-                                                onClick={handleStopRecording}
-                                                variant="outline"
-                                                size="lg"
-                                                className="border-rose-500/20 hover:bg-rose-500/10"
-                                            >
-                                                <Square className="mr-2 h-5 w-5" />
-                                                Stop Recording
-                                            </Button>
-                                        </div>
-                                    </motion.div>
-                                )}
-
-                                {stage === 'processing' && (
-                                    <motion.div
-                                        key="processing"
-                                        initial={{ opacity: 0 }}
-                                        animate={{ opacity: 1 }}
-                                        
-                                        className="text-center py-12 space-y-4"
-                                    >
-                                        <div className="w-16 h-16 border-4 border-primary border-t-transparent rounded-full animate-spin mx-auto" />
-                                        <div>
-                                            <h3 className="font-semibold mb-1">Analyzing your response</h3>
-                                            <p className="text-sm text-muted-foreground">This will take a few seconds...</p>
-                                        </div>
-                                    </motion.div>
-                                )}
-
-                                {stage === 'complete' && score && (
-                                    <motion.div
-                                        key="complete"
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        className="text-center py-8 space-y-6"
-                                    >
-                                        <div>
-                                            <div className="text-6xl font-bold bg-gradient-to-br from-primary via-primary/80 to-primary/60 bg-clip-text text-transparent mb-2">
-                                                {score.overall_score}
-                                            </div>
-                                            <p className="text-sm text-muted-foreground">Overall Score</p>
-                                        </div>
-                                        <div className="flex gap-2 justify-center flex-wrap">
-                                            <Button
-                                                onClick={() => setIsScoreModalOpen(true)}
-                                                variant="outline"
-                                            >
-                                                View Details
-                                            </Button>
-                                            <Button
-                                                onClick={() => {
-                                                    setStage('idle')
-                                                    setScore(null)
-                                                    setTranscript('')
-                                                    resetRecording()
-                                                }}
-                                            >
-                                                Try Again
-                                            </Button>
-                                        </div>
-                                        {audioUrl && (
-                                            <div className="pt-4">
-                                                <audio src={audioUrl} controls className="w-full max-w-md mx-auto" />
-                                            </div>
-                                        )}
-                                    </motion.div>
-                                )}
-                            
-
-                            {/* Error display */}
-                            {(error || recorderError) && (
-                                <Alert variant="destructive" className="mt-4">
-                                    <AlertCircle className="h-4 w-4" />
-                                    <AlertDescription>{error || recorderError}</AlertDescription>
-                                </Alert>
                             )}
-                        </CardContent>
-                    </Card>
-                </div>
+                        </div>
+                    </CardContent>
+                </Card>
             </div>
 
-            {/* Score Details Modal */}
-            {score && (
-                <ScoreDetailsModal
-                    open={isScoreModalOpen}
-                    onOpenChange={setIsScoreModalOpen}
-                    score={score}
-                    transcript={transcript}
-                    originalText={question.promptText || 'Situation prompt'}
-                />
+            {recorderError && (
+                <Alert variant="destructive" className="rounded-[32px] bg-rose-500/5 border-rose-500/20">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription className="font-bold">{recorderError}</AlertDescription>
+                </Alert>
             )}
         </div>
     )

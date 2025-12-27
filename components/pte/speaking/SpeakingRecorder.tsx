@@ -635,7 +635,7 @@ export default function SpeakingRecorder({
     <div className="w-full space-y-6">
       {/* Microphone Selector */}
       <div className="flex justify-center">
-        <MicSelector onDeviceChange={setSelectedMicId} />
+        <MicSelector onValueChange={setSelectedMicId} />
       </div>
 
       {/* Status and Mode */}

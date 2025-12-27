@@ -1,61 +1,53 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Calendar, Target } from 'lucide-react'
-import useSWR from 'swr'
+import { Clock } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
 
-const fetcher = (url: string) => fetch(url).then((res) => res.json())
+interface ExamCountdownMiniProps {
+  targetDate?: string
+}
 
-export function ExamCountdownMini() {
-  const [mounted, setMounted] = useState(false)
-  const { data: examDatesResponse } = useSWR('/api/user/exam-dates', fetcher)
-  const { data: targetScoreData } = useSWR('/api/user/target-score', fetcher)
+// Lightweight countdown badge used in the practice header. If no targetDate is
+// provided it just shows a "No exam set" state.
+export function ExamCountdownMini({ targetDate }: ExamCountdownMiniProps) {
+  const [label, setLabel] = useState<string>('No exam set')
 
   useEffect(() => {
-    setMounted(true)
-  }, [])
+    if (!targetDate) {
+      setLabel('No exam set')
+      return
+    }
 
-  if (!mounted) return null
+    const target = new Date(targetDate).getTime()
 
-  // Handle different response structures - API returns { examDates: [...] }
-  const examDates = Array.isArray(examDatesResponse)
-    ? examDatesResponse
-    : examDatesResponse?.examDates || []
+    const update = () => {
+      const now = Date.now()
+      const diff = target - now
+      if (diff <= 0) {
+        setLabel('Today')
+        return
+      }
+      const days = Math.floor(diff / (1000 * 60 * 60 * 24))
+      if (days <= 0) {
+        setLabel('< 1 day')
+      } else {
+        setLabel(`${days} day${days === 1 ? '' : 's'} left`)
+      }
+    }
 
-  const primaryExam = examDates.find((d: any) => d.isPrimary) || examDates[0]
-  const targetScore = targetScoreData?.targetScore
-
-  if (!primaryExam && !targetScore) return null
-
-  const daysUntilExam = primaryExam
-    ? Math.ceil(
-      (new Date(primaryExam.examDate).getTime() - new Date().getTime()) /
-      (1000 * 60 * 60 * 24)
-    )
-    : null
+    update()
+    const id = setInterval(update, 60_000)
+    return () => clearInterval(id)
+  }, [targetDate])
 
   return (
-    <div className="flex items-center gap-4 text-sm">
-      {daysUntilExam !== null && (
-        <div className="flex items-center gap-2 rounded-md bg-blue-50 px-3 py-1.5 dark:bg-blue-950">
-          <Calendar className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-          <span className="font-medium text-blue-900 dark:text-blue-100">
-            {daysUntilExam > 0
-              ? `${daysUntilExam} days until exam`
-              : daysUntilExam === 0
-                ? 'Exam today!'
-                : 'Exam passed'}
-          </span>
-        </div>
-      )}
-      {targetScore && (
-        <div className="flex items-center gap-2 rounded-md bg-green-50 px-3 py-1.5 dark:bg-green-950">
-          <Target className="h-4 w-4 text-green-600 dark:text-green-400" />
-          <span className="font-medium text-green-900 dark:text-green-100">
-            Target: {targetScore}
-          </span>
-        </div>
-      )}
-    </div>
+    <Badge
+      variant="outline"
+      className="inline-flex items-center gap-1 rounded-full border-amber-300 bg-amber-50 text-amber-700 dark:border-amber-500/40 dark:bg-amber-950/30 dark:text-amber-200 text-[11px] font-semibold px-3 py-1"
+    >
+      <Clock className="h-3 w-3" />
+      <span>{label}</span>
+    </Badge>
   )
 }
