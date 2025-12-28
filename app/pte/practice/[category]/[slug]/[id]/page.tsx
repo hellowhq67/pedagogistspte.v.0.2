@@ -8,15 +8,15 @@ import { ReadingHandler } from '../../../_components/ReadingHandler'
 import { ListeningHandler } from '../../../_components/ListeningHandler'
 
 interface PracticeTaskPageProps {
-  params: {
+  params: Promise<{
     category: string
     slug: string
     id: string
-  }
+  }>
 }
 
 export default async function PracticeTaskPage({ params }: PracticeTaskPageProps) {
-  const { category, slug, id } = params
+  const { category, slug, id } = await params
 
   // Fetch the specific question
   const question = await db.query.pteQuestions.findFirst({

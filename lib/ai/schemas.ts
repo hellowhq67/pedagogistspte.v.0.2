@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { AIFeedbackData, SpeakingFeedbackData } from '../types'
+import { AIFeedbackData, SpeakingFeedbackData } from '@/lib/types'
 
 // Define the Zod schema for the feedback data based on the type definition
 export const AIFeedbackDataSchema = z.object({

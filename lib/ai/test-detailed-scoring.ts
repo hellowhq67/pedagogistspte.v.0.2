@@ -1,7 +1,6 @@
 import * as dotenv from 'dotenv';
-import path from 'path';
 import { scorePteAttemptV2 } from './scoring-agent';
-import { QuestionType } from '@/lib/types';
+import { QuestionType } from '../types';
 
 // Load environment variables
 dotenv.config({ path: '.env.local' });
@@ -10,7 +9,7 @@ dotenv.config();
 async function testDetailedScoring() {
     console.log('[Scoring Test] Running detailed scoring with word marking...');
 
-    // Use the external audio URL and target text from the user's earlier example
+    // Use the verified Vercel Blob URL
     const audioUrl = 'https://0bnqt3onuegvdmxo.public.blob.vercel-storage.com/test/speaking-audit-bNJ9fZ0a6BgiqHCchFztmN0i8Q4r2i.m4a';
     const targetText = "In recent years, significant changes in diet and lifestyle have led to a sharp rise in heart related illnesses. What's more concerning is that these conditions are no longer limited to older adults, but are now affecting younger people too. Strokes are among the most common heart issues, with symptoms like chest pain, weakness and heart attacks.";
 

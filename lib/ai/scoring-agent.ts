@@ -1,18 +1,112 @@
-import { generateObject } from "ai";
-import { proModel, fastModel } from "./config";
-import { QuestionType, AIFeedbackData, WordMarking } from "../types";
-import { z } from "zod";
-import { AIFeedbackDataSchema } from "./schemas";
-import {
-    retrieveScoringCriteria,
-    transcribeAudioTool,
-    fetchAudioAsBase64,
-} from "./tools";
+import { generateText } from 'ai';
+import { proModel, fastModel } from './config';
+import { QuestionType, AIFeedbackData } from '@/lib/types';
+import { z } from 'zod';
+
+import { AIFeedbackDataSchema } from './schemas'
+
+// Mock database of scoring criteria (RAG Knowledge Base)
+const SCORING_CRITERIA: Record<string, string> = {
+    'read_aloud': `
+        **Read Aloud Scoring Criteria:**
+        - **Content (5 points):** Does the speaker include all words from the text? Omissions or insertions differ.
+        - **Oral Fluency (5 points):** Rhythm, phrasing, and stress. No hesitations or repetitions.
+        - **Pronunciation (5 points):** Intelligibility and clarity. Vowels and consonants are produced correctly.
+    `,
+    'repeat_sentence': `
+        **Repeat Sentence Scoring Criteria:**
+        - **Content (3 points):** All words in sequence = 3. >50% words = 2. <50% = 1.
+        - **Oral Fluency (5 points):** Smooth delivery.
+        - **Pronunciation (5 points):** Clear and understandable.
+    `,
+    'describe_image': `
+        **Describe Image Scoring Criteria:**
+        - **Content (5 points):** Describe all main features of the image, relationships, and conclusion.
+        - **Oral Fluency (5 points):** Smooth delivery, natural rhythm.
+        - **Pronunciation (5 points):** Clear and understandable.
+    `,
+    'retell_lecture': `
+        **Retell Lecture Scoring Criteria:**
+        - **Content (5 points):** Captures all key points and relationships from the lecture.
+        - **Oral Fluency (5 points):** Smooth delivery.
+        - **Pronunciation (5 points):** Clear and understandable.
+    `,
+    'answer_short_question': `
+        **Answer Short Question Scoring Criteria:**
+        - **Content (1 point):** Correct answer is 1, incorrect is 0.
+        - **Vocabulary (1 point):** Use of correct terms.
+    `,
+    'write_essay': `
+        **Essay Scoring Criteria:**
+        - **Content (3 points):** Addresses the prompt fully.
+        - **Form (2 points):** 200-300 words.
+        - **Grammar (2 points):** Range of grammatical structures.
+        - **Vocabulary (2 points):** Precise academic vocabulary.
+        - **Structure/Coherence (2 points):** Logical flow and organization.
+    `,
+    'default': `
+        **General Scoring Criteria:**
+        - Accuracy: Correctness of the answer.
+        - Fluency: Smoothness of delivery (if speaking).
+        - Grammar: Correct grammatical structures (if writing/speaking).
+    `
+};
 
 /**
- * Orchestration Agent for PTE Scoring
- * Uses Parallel Review + Synthesis pattern with Gemini 1.5 Pro.
+ * Transcribe audio using AssemblyAI
  */
+async function transcribeAudio(audioUrl: string): Promise<{ transcript?: string; error?: string }> {
+    console.log(`[Tool] Transcribing audio: ${audioUrl}`);
+
+    const assemblyAIKey = process.env.ASSEMBLYAI_API_KEY;
+    if (!assemblyAIKey) {
+        return { error: 'AssemblyAI API Key missing' };
+    }
+
+    try {
+        const response = await fetch('https://api.assemblyai.com/v2/transcript', {
+            method: 'POST',
+            headers: {
+                'authorization': assemblyAIKey,
+                'content-type': 'application/json',
+            },
+            body: JSON.stringify({
+                audio_url: audioUrl,
+                speaker_labels: false
+            }),
+        });
+
+        const data = await response.json();
+
+        if (data.error) throw new Error(data.error);
+
+        const transcriptId = data.id;
+        let status = data.status;
+        let transcript = null;
+
+        // Poll for completion
+        while (status === 'queued' || status === 'processing') {
+            await new Promise(r => setTimeout(r, 1000));
+            const pollResponse = await fetch(`https://api.assemblyai.com/v2/transcript/${transcriptId}`, {
+                headers: { 'authorization': assemblyAIKey }
+            });
+            const pollResult = await pollResponse.json();
+            status = pollResult.status;
+            if (status === 'completed') {
+                transcript = pollResult.text;
+            } else if (status === 'error') {
+                throw new Error(pollResult.error);
+            }
+        }
+
+        return { transcript: transcript || undefined };
+
+    } catch (error: any) {
+        console.error('[Tool] Transcription error:', error);
+        return { error: error.message };
+    }
+}
+
 export async function scorePteAttemptV2(
     type: QuestionType,
     params: {
@@ -25,144 +119,83 @@ export async function scorePteAttemptV2(
 ): Promise<AIFeedbackData> {
     console.log(`[Scoring Agent] Starting scoring for ${type}`);
 
-    // Step 1: Retrieve scoring criteria and transcribe if needed
-    const questionTypeKey = type.toLowerCase().replace(/\s+/g, "_");
+    // Step 1: Retrieve scoring criteria
+    const questionTypeKey = type.toLowerCase().replace(/\s+/g, '_');
+    const criteria = SCORING_CRITERIA[questionTypeKey] || SCORING_CRITERIA['default'];
 
-    const [criteriaResult, transcriptionResult, audioBase64Result] =
-        (await Promise.all([
-            retrieveScoringCriteria.execute({ questionType: questionTypeKey }),
-            params.submission.audioUrl
-                ? transcribeAudioTool.execute({ audioUrl: params.submission.audioUrl })
-                : Promise.resolve({ transcript: params.submission.text }),
-            params.submission.audioUrl
-                ? fetchAudioAsBase64.execute({ url: params.submission.audioUrl })
-                : Promise.resolve(null),
-        ])) as [{ criteria: string }, { transcript?: string; error?: string }, { base64?: string; mimeType?: string; error?: string } | null];
+    // Prepare the user content
+    let userContent = `Question Prompt: ${params.questionContent}\n\n`;
+    userContent += `Scoring Criteria:\n${criteria}\n\n`;
 
-    console.log(`[Scoring Agent] Preprocessing complete.`);
+    // Handle Audio or Text
+    if (params.submission.audioUrl) {
+        console.log(`[Scoring Agent] Processing audio: ${params.submission.audioUrl}`);
 
-    const criteria = criteriaResult.criteria;
-    const transcript =
-        transcriptionResult.transcript || params.submission.text || "";
-
-    if (!transcript && !params.submission.audioUrl) {
-        throw new Error("No submission content provided (text or audio)");
+        // Transcribe audio using AssemblyAI
+        const transcriptionResult = await transcribeAudio(params.submission.audioUrl);
+        if (transcriptionResult.transcript) {
+            userContent += `User's Audio Transcript: ${transcriptionResult.transcript}\n\n`;
+        } else if (transcriptionResult.error) {
+            console.warn('[Scoring Agent] Transcription failed:', transcriptionResult.error);
+            userContent += `User submitted an audio file, but transcription failed.\n\n`;
+        }
+    } else if (params.submission.text) {
+        userContent += `User Text Response: ${params.submission.text}\n\n`;
     }
 
-    console.log(`[Scoring Agent] Transcript: ${transcript}`);
+    userContent += `Please evaluate this response according to the PTE Academic scoring criteria provided above. Return a detailed JSON report with scores and feedback.`;
 
-    // Step 2: Parallel Expert Reviews
-    console.log("[Scoring Agent] Dispatching parallel expert reviews...");
-
-    const [accuracyReviewResult, phoneticReviewResult] = await Promise.allSettled([
-        // Expert 1: Accuracy & Content (Word-level marking)
-        generateObject({
-            model: fastModel,
-            schema: z.object({
-                contentScore: z.number().min(0).max(90),
-                wordMarking: z.array(
-                    z.object({
-                        word: z.string(),
-                        classification: z.enum([
-                            "good",
-                            "average",
-                            "poor",
-                            "pause",
-                            "omitted",
-                            "inserted",
-                            "filler",
-                        ]),
-                        feedback: z.string().optional(),
-                    })
-                ),
-                accuracyFeedback: z.string(),
-            }),
-            messages: [
-                {
-                    role: "system",
-                    content: `You are an expert PTE Content and Accuracy examiner. 
-            Your goal is to compare the target text (Question Prompt) with the User's Transcript.
-            Identify every word that was:
-            - good: pronounced correctly and present
-            - average: slightly mispronounced
-            - poor: badly mispronounced
-            - omitted: in target text but missing in transcript
-            - inserted: in transcript but not in target text
-            - filler: "uh", "um", etc.
-            - pause: significant silent gaps (indicated by punctuation or your inference)
-            
-            Return a list of WordMarking objects and a content score.`,
-                },
-                {
-                    role: "user",
-                    content: `Target Text: ${params.questionContent}\nUser Transcript: ${transcript}\nScoring Criteria: ${criteria}`,
-                },
-            ],
-        }),
-
-        // Expert 2: Pronunciation & Fluency
-        generateObject({
-            model: proModel,
-            schema: z.object({
-                pronunciationScore: z.number().min(0).max(90),
-                fluencyScore: z.number().min(0).max(90),
-                phoneticFeedback: z.string(),
-                strengths: z.array(z.string()),
-                weaknesses: z.array(z.string()),
-            }),
-            system: `You are an expert PTE Phonetic examiner focusing on Oral Fluency and Pronunciation.
-            Assess rhythm, stress, intonation, and clarity.
-            The criteria provided should guide your scores.`,
-            messages: [
-                {
-                    role: "user",
-                    content: [
-                        {
-                            type: "text",
-                            text: `Evaluate the following submission:\nTranscript: ${transcript}\nCriteria: ${criteria}`,
-                        },
-                        ...(audioBase64Result && audioBase64Result.base64
-                            ? [
-                                {
-                                    type: "file" as const,
-                                    data: Buffer.from(audioBase64Result.base64, 'base64'),
-                                    mimeType: audioBase64Result.mimeType || "audio/mpeg",
-                                },
-                            ]
-                            : []),
-                    ],
-                },
-            ],
-        }),
-    ]);
-
-    if (accuracyReviewResult.status === "rejected") {
-        console.error("[Scoring Agent] Accuracy Expert failed:", accuracyReviewResult.reason);
-        throw new Error(`Accuracy Expert Review failed: ${accuracyReviewResult.reason.message}`);
-    }
-    if (phoneticReviewResult.status === "rejected") {
-        console.error("[Scoring Agent] Phonetic Expert failed:", phoneticReviewResult.reason);
-        throw new Error(`Phonetic Expert Review failed: ${phoneticReviewResult.reason.message}`);
-    }
-
-    const accuracyReview = accuracyReviewResult.value;
-    const phoneticReview = phoneticReviewResult.value;
-
-    // Step 3: Technical Lead Synthesis
-    const { object: finalFeedback } = await generateObject({
-        model: proModel,
-        system: `You are the lead PTE Examiner. Synthesize the reports from the Accuracy Expert and the Phonetic Expert into a final, consistent AIFeedbackData report.
-        Ensure the overall score is a fair weighted average.
-        Ensure the wordMarking is preserved and accurate.
-        The output must strictly follow the AIFeedbackData schema.`,
-        schema: AIFeedbackDataSchema,
-        prompt: `
-        Accuracy Expert Report: ${JSON.stringify(accuracyReview.object)}
-        Phonetic Expert Report: ${JSON.stringify(phoneticReview.object)}
-        Question Type: ${type}
-        Question Content: ${params.questionContent}`,
+    // Generate scoring using Gemini
+    // Using fastModel for cost-efficiency (Free Mode)
+    const isFreeMode = process.env.NEXT_PUBLIC_FREE_MODE === 'true';
+    const { text } = await generateText({
+        model: isFreeMode ? fastModel : proModel,
+        system: `You are an expert PTE Academic examiner. Your goal is to provide a detailed, accurate score and feedback for the user's response.
+        
+        Evaluate the response against the criteria provided. Generate a detailed JSON report following this exact structure:
+        {
+            "overallScore": <number 0-90>,
+            "pronunciation": { "score": <number>, "feedback": "<string>" },
+            "fluency": { "score": <number>, "feedback": "<string>" },
+            "grammar": { "score": <number>, "feedback": "<string>" },
+            "vocabulary": { "score": <number>, "feedback": "<string>" },
+            "content": { "score": <number>, "feedback": "<string>" },
+            "spelling": { "score": <number>, "feedback": "<string>" },
+            "structure": { "score": <number>, "feedback": "<string>" },
+            "accuracy": { "score": <number>, "feedback": "<string>" },
+            "suggestions": ["<string>", ...],
+            "strengths": ["<string>", ...],
+            "areasForImprovement": ["<string>", ...]
+        }
+        
+        Only include the criteria that are relevant to this question type. Return ONLY valid JSON, no other text.`,
+        prompt: userContent,
+        temperature: 0.1,
     });
 
-    console.log("[Scoring Agent] Scoring complete.");
-    return finalFeedback;
+    console.log('[Scoring Agent] Raw response:', text);
+
+    // Parse the JSON response
+    try {
+        // Extract JSON from the response (in case there's extra text)
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) {
+            throw new Error('No JSON found in response');
+        }
+
+        const parsedData = JSON.parse(jsonMatch[0]);
+        const validatedData = AIFeedbackDataSchema.parse(parsedData);
+
+        console.log('[Scoring Agent] Scoring complete.');
+        return validatedData;
+    } catch (error) {
+        console.error('[Scoring Agent] Failed to parse response:', error);
+        // Return a fallback response
+        return {
+            overallScore: 0,
+            suggestions: ['Unable to generate feedback. Please try again.'],
+            strengths: [],
+            areasForImprovement: ['System error occurred during scoring'],
+        };
+    }
 }

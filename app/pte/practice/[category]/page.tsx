@@ -10,13 +10,13 @@ import Link from 'next/link'
 import { cn } from '@/lib/utils'
 
 interface PracticeCategoryPageProps {
-  params: {
+  params: Promise<{
     category: string
-  }
+  }>
 }
 
 export default async function PracticeCategoryPage({ params }: PracticeCategoryPageProps) {
-  const { category: categoryCode } = params
+  const { category: categoryCode } = await params
 
   const category = await db.query.pteCategories.findFirst({
     where: eq(pteCategories.code, categoryCode),
