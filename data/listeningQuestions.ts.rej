@@ -1,0 +1,8 @@
+diff a/data/listeningQuestions.ts b/data/listeningQuestions.ts	(rejected hunks)
+@@ -326,4 +326,4 @@ export function getListeningTestTypeInfo(type: ListeningTestType): { name: strin
+     }
+   };
+   return info[type];
+-}
++}
+\ No newline at end of file

@@ -1,0 +1,8 @@
+diff a/data/speakingQuestions.ts b/data/speakingQuestions.ts	(rejected hunks)
+@@ -1136,4 +1136,4 @@ export function getTestTypeInfo(type: TestType) {
+     }
+   };
+   return info[type];
+-}
++}
+\ No newline at end of file
