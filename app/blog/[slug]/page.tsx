@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import Image from "next/image";
 import { Metadata } from "next";
 import { getAllPosts, getPostBySlug } from "@/lib/blog";
+import { BlogNavbar } from "@/components/blog/BlogNavbar";
 import { TracingBeam } from "@/components/ui/tracing-beam";
 import { Badge } from "@/components/ui/badge";
 import { CalendarIcon, UserIcon, Clock } from "lucide-react";
@@ -50,6 +51,7 @@ export default async function BlogPostPage({ params }: Props) {
 
     return (
         <div className="min-h-screen bg-background pt-32 pb-20 relative">
+            <BlogNavbar />
             <TracingBeam className="px-6">
                 <div className="max-w-2xl mx-auto antialiased pt-4 relative">
                     <div className="mb-8 relative h-64 md:h-96 w-full rounded-2xl overflow-hidden shadow-xl">

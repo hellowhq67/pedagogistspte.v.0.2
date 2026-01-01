@@ -1,5 +1,10 @@
 name: Builders CI
 
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
 on:
   push:
     branches: [ main ]

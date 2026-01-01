@@ -1,4 +1,6 @@
 import { BlogFeed } from "@/components/blog/BlogFeed";
+import { BlogNavbar } from "@/components/blog/BlogNavbar";
+import { BlogSearchAdvanced } from "@/components/blog/BlogSearchAdvanced";
 import { StickyScroll } from "@/components/ui/sticky-scroll-reveal";
 import { getAllPosts } from "@/lib/blog";
 import { Metadata } from "next";
@@ -52,6 +54,8 @@ export default function BlogPage() {
 
     return (
         <div className="min-h-screen bg-background">
+            <BlogNavbar />
+            
             {/* Hero Section */}
             <section className="pt-32 pb-20 relative overflow-hidden">
                 <div className="container mx-auto px-4 relative z-10 text-center">
@@ -75,6 +79,19 @@ export default function BlogPage() {
                 <div className="container mx-auto px-4">
                     <h2 className="text-3xl font-bold mb-12 text-center">Key Pillars of Success</h2>
                     <StickyScroll content={featureContent} />
+                </div>
+            </section>
+
+            {/* AI Search Section */}
+            <section className="py-16 bg-gradient-to-b from-muted/30 to-background">
+                <div className="container mx-auto px-4">
+                    <div className="max-w-4xl mx-auto">
+                        <div className="text-center mb-8">
+                            <h2 className="text-3xl font-bold mb-2">Find Articles with AI</h2>
+                            <p className="text-muted-foreground">Search with semantic understanding to discover exactly what you need</p>
+                        </div>
+                        <BlogSearchAdvanced />
+                    </div>
                 </div>
             </section>
 
