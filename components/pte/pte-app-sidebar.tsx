@@ -22,6 +22,7 @@ import {
   PenTool,
   BadgeCheck,
   Settings,
+  User,
 } from "lucide-react";
 import { usePathname } from "next/navigation";
 
@@ -183,6 +184,11 @@ const navMain = [
     title: "AI Voice Assistant",
     url: "/pte/ai-voice",
     icon: Bot,
+  },
+  {
+    title: "Profile",
+    url: "/pte/profile",
+    icon: User,
   },
   {
     title: "Billing",

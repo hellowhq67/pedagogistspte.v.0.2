@@ -1,6 +1,28 @@
 // PTE Question Types Configuration
+
+import { IconKey, ICON_MAP } from './icons'
+
+// Types for PTE question definitions
+export type WordCountRange = {
+    min: number
+    max: number
+}
+
+export type QuestionCategory = 'speaking' | 'writing' | 'reading' | 'listening'
+
+export type QuestionDefinition = {
+    code: string
+    name: string
+    description: string
+    category: QuestionCategory
+    prepTime: number
+    answerTime: number
+    icon: IconKey
+    wordCount?: WordCountRange
+}
+
 export const PTE_QUESTION_TYPES = {
-    // Speaking (6 types)
+    // Speaking (7 types)
     SPEAKING: {
         READ_ALOUD: {
             code: 'read_aloud',
@@ -140,7 +162,7 @@ export const PTE_QUESTION_TYPES = {
         }
     },
 
-    // Listening (6 types)
+    // Listening (8 types)
     LISTENING: {
         SUMMARIZE_SPOKEN_TEXT: {
             code: 'summarize_spoken_text',
@@ -154,7 +176,7 @@ export const PTE_QUESTION_TYPES = {
         },
         MULTIPLE_CHOICE_SINGLE_LISTENING: {
             code: 'multiple_choice_single_listening',
-            name: 'Multiple Choice Single Answer',
+            name: 'Multiple Choice Single Answer (Listening)',
             description: 'Choose one correct answer from audio',
             category: 'listening',
             prepTime: 0,
@@ -163,7 +185,7 @@ export const PTE_QUESTION_TYPES = {
         },
         MULTIPLE_CHOICE_MULTIPLE_LISTENING: {
             code: 'multiple_choice_multiple_listening',
-            name: 'Multiple Choice Multiple Answers',
+            name: 'Multiple Choice Multiple Answers (Listening)',
             description: 'Choose multiple correct answers from audio',
             category: 'listening',
             prepTime: 0,
@@ -172,7 +194,7 @@ export const PTE_QUESTION_TYPES = {
         },
         FILL_IN_THE_BLANKS_LISTENING: {
             code: 'fill_in_the_blanks_listening',
-            name: 'Fill in the Blanks',
+            name: 'Fill in the Blanks (Listening)',
             description: 'Fill in missing words from audio',
             category: 'listening',
             prepTime: 0,
@@ -216,7 +238,7 @@ export const PTE_QUESTION_TYPES = {
             icon: 'Keyboard'
         }
     }
-}
+} as const
 
 // Flatten all question types for easier access
 export const ALL_QUESTION_TYPES = {
@@ -224,24 +246,42 @@ export const ALL_QUESTION_TYPES = {
     ...PTE_QUESTION_TYPES.WRITING,
     ...PTE_QUESTION_TYPES.READING,
     ...PTE_QUESTION_TYPES.LISTENING
-}
+} as const
+
+// Derived types from the const definitions
+export type DerivedQuestionDefinition = typeof ALL_QUESTION_TYPES[keyof typeof ALL_QUESTION_TYPES]
+export type QuestionCode = DerivedQuestionDefinition['code']
 
 // Get question type by code
-export const getQuestionTypeByCode = (code: string) => {
+export const getQuestionTypeByCode = (code: string): DerivedQuestionDefinition | undefined => {
     return Object.values(ALL_QUESTION_TYPES).find(type => type.code === code)
 }
 
+// Runtime validation utilities
+export const validateQuestionDefinitions = (): string[] => {
+    const errors: string[] = []
+    const all = Object.values(ALL_QUESTION_TYPES) as DerivedQuestionDefinition[]
+    all.forEach((q) => {
+        if (!q.code) errors.push(`Missing code for question with name=${q.name}`)
+        if (!q.name) errors.push(`Missing name for question code=${q.code}`)
+        if (!ICON_MAP[q.icon]) errors.push(`Invalid icon '${q.icon}' for question code=${q.code}`)
+        if (typeof q.prepTime !== 'number') errors.push(`Invalid prepTime for question code=${q.code}`)
+        if (typeof q.answerTime !== 'number') errors.push(`Invalid answerTime for question code=${q.code}`)
+    })
+    return errors
+}
+
 // Get question types by category
-export const getQuestionTypesByCategory = (category: string) => {
+export const getQuestionTypesByCategory = (category: QuestionCategory): DerivedQuestionDefinition[] => {
     switch (category) {
         case 'speaking':
-            return Object.values(PTE_QUESTION_TYPES.SPEAKING)
+            return Object.values(PTE_QUESTION_TYPES.SPEAKING) as DerivedQuestionDefinition[]
         case 'writing':
-            return Object.values(PTE_QUESTION_TYPES.WRITING)
+            return Object.values(PTE_QUESTION_TYPES.WRITING) as DerivedQuestionDefinition[]
         case 'reading':
-            return Object.values(PTE_QUESTION_TYPES.READING)
+            return Object.values(PTE_QUESTION_TYPES.READING) as DerivedQuestionDefinition[]
         case 'listening':
-            return Object.values(PTE_QUESTION_TYPES.LISTENING)
+            return Object.values(PTE_QUESTION_TYPES.LISTENING) as DerivedQuestionDefinition[]
         default:
             return []
     }

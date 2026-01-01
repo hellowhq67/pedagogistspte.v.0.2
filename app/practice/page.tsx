@@ -15,6 +15,10 @@ import {
     ChevronRight,
     ClipboardList
 } from 'lucide-react'
+import { speakingQuestions } from '@/data/speakingQuestions'
+import { writingQuestions } from '@/data/writingQuestions'
+import { readingQuestions } from '@/data/readingQuestions'
+import { listeningQuestions } from '@/data/listeningQuestions'
 import { cn } from '@/lib/utils'
 
 const categories = [
@@ -25,8 +29,8 @@ const categories = [
         icon: Mic,
         color: 'from-blue-600 to-blue-400',
         cardBg: 'bg-blue-50/50 dark:bg-blue-500/5',
-        href: '/practice/speaking',
-        count: 7,
+        href: `/practice/speaking/${speakingQuestions[0]?.id ?? 'index'}`,
+        count: speakingQuestions.length,
     },
     {
         id: 'writing',
@@ -35,8 +39,8 @@ const categories = [
         icon: PenTool,
         color: 'from-purple-600 to-purple-400',
         cardBg: 'bg-purple-50/50 dark:bg-purple-500/5',
-        href: '/practice/writing',
-        count: 2,
+        href: `/practice/writing/${writingQuestions[0]?.id ?? 'index'}`,
+        count: writingQuestions.length,
     },
     {
         id: 'reading',
@@ -45,8 +49,8 @@ const categories = [
         icon: BookOpen,
         color: 'from-emerald-600 to-emerald-400',
         cardBg: 'bg-emerald-50/50 dark:bg-emerald-500/5',
-        href: '/practice/reading',
-        count: 5,
+        href: `/practice/reading/${readingQuestions[0]?.id ?? 'index'}`,
+        count: readingQuestions.length,
     },
     {
         id: 'listening',
@@ -55,8 +59,8 @@ const categories = [
         icon: Headphones,
         color: 'from-orange-600 to-orange-400',
         cardBg: 'bg-orange-50/50 dark:bg-orange-500/5',
-        href: '/practice/listening',
-        count: 8,
+        href: `/practice/listening/${listeningQuestions[0]?.id ?? 'index'}`,
+        count: listeningQuestions.length,
     },
 ]
 
