@@ -1,5 +1,5 @@
 @import "tailwindcss";
-
+@source "../node_modules/streamdown/dist/*.js";
 @theme {
   --radius: 0.75rem;
 
@@ -38,10 +38,10 @@
 
   /* Charts */
   --color-chart-1: oklch(0.471 0.19 272.1); /* Violet */
-  --color-chart-2: oklch(0.62 0.14 230);   /* Sky */
-  --color-chart-3: oklch(0.75 0.12 210);   /* Light Blue */
-  --color-chart-4: oklch(0.55 0.16 260);   /* Indigo */
-  --color-chart-5: oklch(0.65 0.1 290);    /* Soft Purple */
+  --color-chart-2: oklch(0.62 0.14 230); /* Sky */
+  --color-chart-3: oklch(0.75 0.12 210); /* Light Blue */
+  --color-chart-4: oklch(0.55 0.16 260); /* Indigo */
+  --color-chart-5: oklch(0.65 0.1 290); /* Soft Purple */
 
   /* Sidebar */
   --color-sidebar: oklch(0.97 0.02 240);
@@ -107,8 +107,12 @@ body {
 
 /* Optional shimmer */
 @keyframes shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .animate-shimmer {
@@ -117,8 +121,12 @@ body {
 
 /* Premium Spinner */
 @keyframes spin-slow {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .animate-spin-slow {
@@ -126,8 +134,15 @@ body {
 }
 
 @keyframes pulse-soft {
-  0%, 100% { opacity: 1; transform: scale(1); }
-  50% { opacity: 0.8; transform: scale(0.98); }
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(0.98);
+  }
 }
 
 .animate-pulse-soft {

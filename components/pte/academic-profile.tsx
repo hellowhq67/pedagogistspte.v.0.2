@@ -41,9 +41,7 @@ export function AcademicProfile({
   const updateProfileAction = async (formData: FormData) => {
     startTransition(async () => {
       const result = await updateProfile(null, new FormData())
-      if (result?.error) {
-        // handle error
-      }
+     
     })
   }
 
@@ -96,4 +94,8 @@ export function AcademicProfile({
       </CardContent>
     </Card>
   )
+}
+
+function updateProfile(arg0: null, arg1: FormData) {
+  throw new Error('Function not implemented.')
 }

@@ -1,12 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getUserExamDates, createUserExamDate } from "@/lib/db/queries";
+import { requireAuth } from "@/lib/api";
 
 /**
  * Retrieve scheduled exam dates for the authenticated user.
  */
 export async function GET(request: NextRequest) {
   try {
-    const examDates = await getUserExamDates();
+    const session = await requireAuth();
+    const examDates = await getUserExamDates(session.userId);
     return NextResponse.json({ examDates });
   } catch (error) {
     console.error("Error fetching exam dates:", error);
@@ -23,8 +25,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const newExamDate = await createUserExamDate(body);
-
+    const newExamDate = await createUserExamDate(session.userId, body.date);
     return NextResponse.json({ success: true, examDate: newExamDate });
   } catch (error) {
     console.error("Error creating exam date:", error);

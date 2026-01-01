@@ -1,11 +1,12 @@
 'use client'
 
 import React from 'react'
-import { motion } from 'framer-motion'
+import { motion } from 'motion/react'
 import { UIMessage } from '@ai-sdk/react'
 import { User, Sparkles } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import ReactMarkdown from 'react-markdown'
+import { Message } from '../ai-elements/message'
 
 interface AIChatMessageProps {
   message: UIMessage
@@ -13,7 +14,7 @@ interface AIChatMessageProps {
 
 export function AIChatMessage({ message }: AIChatMessageProps) {
   const isUser = message.role === 'user'
-  
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -55,48 +56,19 @@ export function AIChatMessage({ message }: AIChatMessageProps) {
               : 'bg-muted text-foreground'
           )}
         >
-          {message.parts.map((part, index) => {
-            if (part.type === 'text') {
-              return (
-                <div key={index} className="prose prose-sm dark:prose-invert max-w-none">
-                  <ReactMarkdown
-                    components={{
-                      p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-                      ul: ({ children }) => <ul className="list-disc pl-4 mb-2">{children}</ul>,
-                      ol: ({ children }) => <ol className="list-decimal pl-4 mb-2">{children}</ol>,
-                      li: ({ children }) => <li className="mb-1">{children}</li>,
-                      code: ({ children, className }) => {
-                        const isInline = !className
-                        return isInline ? (
-                          <code className="bg-muted px-1.5 py-0.5 rounded text-sm font-mono">
-                            {children}
-                          </code>
-                        ) : (
-                          <code className={className}>{children}</code>
-                        )
-                      },
-                      a: ({ href, children }) => (
-                        <a
-                          href={href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className={cn(
-                            'underline hover:no-underline',
-                            isUser ? 'text-blue-100' : 'text-blue-600 dark:text-blue-400'
-                          )}
-                        >
-                          {children}
-                        </a>
-                      ),
-                    }}
-                  >
-                    {part.text}
-                  </ReactMarkdown>
-                </div>
-              )
-            }
-            return null
-          })}
+          {messages.map(({ role, parts }, index) => (
+            <Message from={role} key={index}>
+              <MessageContent>
+                {parts.map((part, i) => {
+                  switch (part.type) {
+                    case 'text':
+                      return <MessageResponse key={`${role}-${i}`}>{part.text}</MessageResponse>;
+                  }
+                })}
+              </MessageContent>
+            </Message>
+          ))}
+
         </div>
         <span className="text-xs text-muted-foreground px-1">
           {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

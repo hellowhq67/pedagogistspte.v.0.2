@@ -47,6 +47,15 @@ export const PTE_QUESTION_TYPES = {
             answerTime: 10,
             icon: 'MessageCircle'
         },
+        RESPOND_TO_A_SITUATION: {
+            code: 'respond_to_a_situation',
+            name: 'Respond to a Situation',
+            description: 'Respond to a given situation',
+            category: 'speaking',
+            prepTime: 20,
+            answerTime: 40,
+            icon: 'MessageSquare'
+        },
         SUMMARIZE_GROUP_DISCUSSION: {
             code: 'summarize_group_discussion',
             name: 'Summarize Group Discussion',

@@ -1,39 +1,36 @@
-/**
- * Subscription Tier System
- * Defines access levels and limits for different subscription plans
- */
+
 
 export enum SubscriptionTier {
-  FREE = 'free',
-  PRO = 'pro',
-  PREMIUM = 'premium',
+  FREE = "free",
+  PRO = "pro",
+  PREMIUM = "premium",
 }
 
 export interface TierLimits {
   // Mock Tests
-  mockTestsAllowed: number // -1 = unlimited
-  mockTestsAvailable: number[] // Array of test numbers (1-200)
+  mockTestsAllowed: number; // -1 = unlimited
+  mockTestsAvailable: number[]; // Array of test numbers (1-200)
 
   // Practice Limits
   practiceLimits: {
     [section: string]: {
-      [questionType: string]: number // -1 = unlimited
-    }
-  }
+      [questionType: string]: number; // -1 = unlimited
+    };
+  };
 
   // AI Scoring
-  dailyAiCredits: number // -1 = unlimited
-  aiScoringPriority: 'normal' | 'high'
+  dailyAiCredits: number; // -1 = unlimited
+  aiScoringPriority: "normal" | "high";
 
   // Features
   features: {
-    testHistory: boolean
-    detailedAnalytics: boolean
-    studyPlan: boolean
-    teacherReview: boolean
-    sectionTests: number // -1 = unlimited
-    downloadReports: boolean
-  }
+    testHistory: boolean;
+    detailedAnalytics: boolean;
+    studyPlan: boolean;
+    teacherReview: boolean;
+    sectionTests: number; // -1 = unlimited
+    downloadReports: boolean;
+  };
 }
 
 export const TIER_CONFIGS: Record<SubscriptionTier, TierLimits> = {
@@ -73,7 +70,7 @@ export const TIER_CONFIGS: Record<SubscriptionTier, TierLimits> = {
     },
 
     dailyAiCredits: 10,
-    aiScoringPriority: 'normal',
+    aiScoringPriority: "normal",
 
     features: {
       testHistory: true, // Limited to last 5 tests
@@ -121,7 +118,7 @@ export const TIER_CONFIGS: Record<SubscriptionTier, TierLimits> = {
     },
 
     dailyAiCredits: -1, // Unlimited
-    aiScoringPriority: 'normal',
+    aiScoringPriority: "normal",
 
     features: {
       testHistory: true, // Full history
@@ -169,7 +166,7 @@ export const TIER_CONFIGS: Record<SubscriptionTier, TierLimits> = {
     },
 
     dailyAiCredits: -1,
-    aiScoringPriority: 'high', // Priority queue
+    aiScoringPriority: "high", // Priority queue
 
     features: {
       testHistory: true,
@@ -180,14 +177,14 @@ export const TIER_CONFIGS: Record<SubscriptionTier, TierLimits> = {
       downloadReports: true,
     },
   },
-}
+};
 
 /**
  * Get tier configuration for a user's subscription
  */
 export function getTierConfig(tier: SubscriptionTier | string): TierLimits {
-  const tierKey = tier.toLowerCase() as SubscriptionTier
-  return TIER_CONFIGS[tierKey] || TIER_CONFIGS[SubscriptionTier.FREE]
+  const tierKey = tier.toLowerCase() as SubscriptionTier;
+  return TIER_CONFIGS[tierKey] || TIER_CONFIGS[SubscriptionTier.FREE];
 }
 
 /**
@@ -197,8 +194,8 @@ export function canAccessMockTest(
   tier: SubscriptionTier | string,
   testNumber: number
 ): boolean {
-  const config = getTierConfig(tier)
-  return config.mockTestsAvailable.includes(testNumber)
+  const config = getTierConfig(tier);
+  return config.mockTestsAvailable.includes(testNumber);
 }
 
 /**
@@ -210,13 +207,13 @@ export function canPracticeQuestionType(
   questionType: string,
   attemptsToday: number
 ): boolean {
-  const config = getTierConfig(tier)
-  const limit = config.practiceLimits[section]?.[questionType]
+  const config = getTierConfig(tier);
+  const limit = config.practiceLimits[section]?.[questionType];
 
-  if (limit === undefined) return true // No limit defined
-  if (limit === -1) return true // Unlimited
+  if (limit === undefined) return true; // No limit defined
+  if (limit === -1) return true; // Unlimited
 
-  return attemptsToday < limit
+  return attemptsToday < limit;
 }
 
 /**
@@ -228,12 +225,12 @@ export function getRemainingPracticeAttempts(
   questionType: string,
   attemptsToday: number
 ): number {
-  const config = getTierConfig(tier)
-  const limit = config.practiceLimits[section]?.[questionType]
+  const config = getTierConfig(tier);
+  const limit = config.practiceLimits[section]?.[questionType];
 
-  if (limit === undefined || limit === -1) return -1 // Unlimited
+  if (limit === undefined || limit === -1) return -1; // Unlimited
 
-  return Math.max(0, limit - attemptsToday)
+  return Math.max(0, limit - attemptsToday);
 }
 
 /**
@@ -243,11 +240,11 @@ export function hasAiCreditsAvailable(
   tier: SubscriptionTier | string,
   creditsUsedToday: number
 ): boolean {
-  const config = getTierConfig(tier)
+  const config = getTierConfig(tier);
 
-  if (config.dailyAiCredits === -1) return true // Unlimited
+  if (config.dailyAiCredits === -1) return true; // Unlimited
 
-  return creditsUsedToday < config.dailyAiCredits
+  return creditsUsedToday < config.dailyAiCredits;
 }
 
 /**
@@ -257,11 +254,11 @@ export function getRemainingAiCredits(
   tier: SubscriptionTier | string,
   creditsUsedToday: number
 ): number {
-  const config = getTierConfig(tier)
+  const config = getTierConfig(tier);
 
-  if (config.dailyAiCredits === -1) return -1 // Unlimited
+  if (config.dailyAiCredits === -1) return -1; // Unlimited
 
-  return Math.max(0, config.dailyAiCredits - creditsUsedToday)
+  return Math.max(0, config.dailyAiCredits - creditsUsedToday);
 }
 
 /**
@@ -270,47 +267,47 @@ export function getRemainingAiCredits(
 export const TIER_PRICING = {
   [SubscriptionTier.FREE]: {
     price: 0,
-    period: 'forever',
-    displayPrice: 'Free',
+    period: "forever",
+    displayPrice: "Free",
   },
   [SubscriptionTier.PRO]: {
     price: 29,
-    period: 'month',
-    displayPrice: '$29/month',
+    period: "month",
+    displayPrice: "$29/month",
   },
   [SubscriptionTier.PREMIUM]: {
     price: 49,
-    period: 'month',
-    displayPrice: '$49/month',
+    period: "month",
+    displayPrice: "$49/month",
   },
-}
+};
 
 /**
  * Tier features for marketing/comparison
  */
 export const TIER_FEATURES_DISPLAY = {
   [SubscriptionTier.FREE]: [
-    '1 Free Mock Test',
-    'Limited Practice Questions',
-    '10 AI Scoring Credits/Day',
-    'Basic Test History',
-    '2 Section Tests per Type',
+    "1 Free Mock Test",
+    "Limited Practice Questions",
+    "10 AI Scoring Credits/Day",
+    "Basic Test History",
+    "2 Section Tests per Type",
   ],
   [SubscriptionTier.PRO]: [
-    'All 200 Mock Tests',
-    'Unlimited Practice',
-    'Unlimited AI Scoring',
-    'Full Test History',
-    'Detailed Analytics',
-    'Unlimited Section Tests',
-    'Download Reports',
+    "All 200 Mock Tests",
+    "Unlimited Practice",
+    "Unlimited AI Scoring",
+    "Full Test History",
+    "Detailed Analytics",
+    "Unlimited Section Tests",
+    "Download Reports",
   ],
   [SubscriptionTier.PREMIUM]: [
-    'Everything in Pro',
-    'Priority AI Scoring',
-    'Personalized Study Plans',
-    'Teacher Review Access',
-    'Advanced Analytics',
-    'Priority Support',
+    "Everything in Pro",
+    "Priority AI Scoring",
+    "Personalized Study Plans",
+    "Teacher Review Access",
+    "Advanced Analytics",
+    "Priority Support",
   ],
-}
+};

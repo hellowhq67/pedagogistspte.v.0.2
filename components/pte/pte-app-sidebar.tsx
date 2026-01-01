@@ -1,24 +1,32 @@
-"use client"
+"use client";
 
-import * as React from "react"
+import * as React from "react";
+import Link from "next/link";
 import {
-  LayoutDashboard,
+  AudioWaveform,
   BookOpen,
-  Mic,
-  FileText,
-  Headphones,
-  ClipboardList,
-  History,
-  Users,
   Bot,
-  Video,
-  BookMarked,
-  TestTube2,
-  ListChecks,
-} from "lucide-react"
+  Command,
+  Frame,
+  GalleryVerticalEnd,
+  Map,
+  PieChart,
+  Settings2,
+  SquareTerminal,
+  Home,
+  Trophy,
+  History,
+  MessageSquare,
+  Headphones,
+  Mic,
+  PenTool,
+  BadgeCheck,
+  Settings,
+} from "lucide-react";
+import { usePathname } from "next/navigation";
 
-import { NavMainPTE } from "@/components/pte/nav-main-pte"
-import { NavUser } from "@/components/nav-user"
+import { NavMainPTE } from "@/components/pte/nav-main-pte";
+import { NavUser } from "@/components/nav-user";
 import {
   Sidebar,
   SidebarContent,
@@ -28,97 +36,171 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
-} from "@/components/ui/sidebar"
-import Link from "next/link"
+} from "@/components/ui/sidebar";
 
+// This is sample data.
 const navMain = [
   {
-    title: "Overview",
+    title: "Dashboard",
     url: "/pte/dashboard",
-    icon: LayoutDashboard,
-    isActive: false,
+    icon: Home,
   },
   {
-    title: "Practice",
-    url: "/pte/practice",
-    icon: BookOpen,
+    title: "Practice Hub",
+    url: "/practice",
     isActive: true,
     items: [
       {
         title: "Speaking",
-        url: "/pte/practice/speaking",
+        url: "/practice/speaking",
+        items: [
+          {
+            title: "Read Aloud",
+            url: "/practice/speaking/read_aloud",
+          },
+          {
+            title: "Repeat Sentence",
+            url: "/practice/speaking/repeat_sentence",
+          },
+          {
+            title: "Describe Image",
+            url: "/practice/speaking/describe_image",
+          },
+          {
+            title: "Re-tell Lecture",
+            url: "/practice/speaking/retell_lecture",
+          },
+          {
+            title: "Answer Short Question",
+            url: "/practice/speaking/answer_short_question",
+          },
+          {
+            title: "Respond to Situation",
+            url: "/practice/speaking/respond_to_situation",
+          },
+          {
+            title: "Summarize Discussion",
+            url: "/practice/speaking/summarize_group_discussion",
+          },
+        ],
       },
       {
         title: "Writing",
-        url: "/pte/practice/writing",
+        url: "/practice/writing",
+        items: [
+          {
+            title: "Summarize Written Text",
+            url: "/practice/writing/summarize_written_text",
+          },
+          {
+            title: "Write Essay",
+            url: "/practice/writing/write_essay",
+          },
+        ],
       },
       {
         title: "Reading",
-        url: "/pte/practice/reading",
+        url: "/practice/reading",
+        items: [
+          {
+            title: "MC Single Answer",
+            url: "/practice/reading/reading_mc_single",
+          },
+          {
+            title: "MC Multiple Answers",
+            url: "/practice/reading/reading_mc_multiple",
+          },
+          {
+            title: "Re-order Paragraphs",
+            url: "/practice/reading/reorder_paragraphs",
+          },
+          {
+            title: "Fill in the Blanks (Dropdown)",
+            url: "/practice/reading/reading_fill_blanks_dropdown",
+          },
+          {
+            title: "Fill in the Blanks (Drag)",
+            url: "/practice/reading/reading_fill_blanks_drag",
+          },
+        ],
       },
       {
         title: "Listening",
-        url: "/pte/practice/listening",
+        url: "/practice/listening",
+        items: [
+          {
+            title: "Summarize Spoken Text",
+            url: "/practice/listening/summarize_spoken_text",
+          },
+          {
+            title: "MC Single Answer",
+            url: "/practice/listening/listening_mc_single",
+          },
+          {
+            title: "MC Multiple Answers",
+            url: "/practice/listening/listening_mc_multiple",
+          },
+          {
+            title: "Fill in the Blanks",
+            url: "/practice/listening/listening_fill_blanks",
+          },
+          {
+            title: "Highlight Correct Summary",
+            url: "/practice/listening/highlight_correct_summary",
+          },
+          {
+            title: "Select Missing Word",
+            url: "/practice/listening/select_missing_word",
+          },
+          {
+            title: "Highlight Incorrect Words",
+            url: "/practice/listening/highlight_incorrect_words",
+          },
+          {
+            title: "Write from Dictation",
+            url: "/practice/listening/write_from_dictation",
+          },
+        ],
       },
     ],
   },
   {
     title: "Mock Tests",
     url: "/pte/mock-tests",
-    icon: TestTube2,
-    items: [
-      {
-        title: "Full Mock Tests",
-        url: "/pte/mock-tests",
-      },
-      {
-        title: "Sectional Tests",
-        url: "/pte/mock-tests/sectional",
-      },
-    ],
+    icon: Trophy,
   },
   {
-    title: "Test History",
-    url: "/pte/academic/practice-attempts",
+    title: "History",
+    url: "/pte/history",
     icon: History,
   },
   {
     title: "Community",
     url: "/pte/community",
-    icon: Users,
+    icon: MessageSquare,
   },
   {
-    title: "AI Agents",
-    url: "/pte/ai-coach",
+    title: "AI Voice Assistant",
+    url: "/pte/ai-voice",
     icon: Bot,
   },
   {
-    title: "Live Class",
-    url: "/pte/study-center",
-    icon: Video,
+    title: "Billing",
+    url: "/pte/billing",
+    icon: BadgeCheck,
   },
   {
-    title: "Resources",
-    url: "/pte/templates",
-    icon: BookMarked,
-    items: [
-      {
-        title: "Templates",
-        url: "/pte/templates",
-      },
-      {
-        title: "Vocabulary",
-        url: "/pte/vocab-books",
-      },
-      {
-        title: "Shadowing",
-        url: "/pte/shadowing",
-      },
-    ],
+    title: "Settings",
+    url: "/pte/settings",
+    icon: Settings,
   },
-]
+];
 
-export function PTEAppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
+export function PTEAppSidebar({
+  ...props
+}: React.ComponentProps<typeof Sidebar>) {
+  const pathname = usePathname();
+
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
@@ -126,9 +208,6 @@ export function PTEAppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild>
               <Link href="/pte/dashboard">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg">
-                  <img src="/assets/pedagogist-logo.png" alt="Pedagogist" className="size-8 object-contain" />
-                </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-semibold">Pedagogist</span>
                   <span className="truncate text-xs">AI Learning Platform</span>
@@ -139,12 +218,19 @@ export function PTEAppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <NavMainPTE items={navMain} />
+        <NavMainPTE items={navMain.map((item: any) => ({
+          ...item,
+          isActive: item.url === pathname || (item.items?.some((sub: any) => sub.url === pathname) ?? false) || pathname?.startsWith(item.url + '/'),
+          items: item.items?.map((sub: any) => ({
+            ...sub,
+            isActive: sub.url === pathname || (sub.items?.some((child: any) => child.url === pathname) ?? false)
+          }))
+        }))} />
       </SidebarContent>
       <SidebarFooter>
         <NavUser />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
-  )
+  );
 }
